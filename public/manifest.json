@@ -1,6 +1,6 @@
 {
-  "name": "Prodify",
-  "short_name": "Prodify",
+  "name": "GoalsMi",
+  "short_name": "GoalsMi",
   "description": "Productivity & Habits Planner",
   "start_url": "/",
   "display": "standalone",

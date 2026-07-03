@@ -1,0 +1,113 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Helpers
+    function isValidTask(data, isCreate) {
+      return data.keys().hasAll(['userId', 'name', 'priority', 'completed']) &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() <= 200 &&
+             data.priority is string && data.priority.size() <= 20 &&
+             data.completed is bool &&
+             (isCreate ? (data.createdAt == request.time) : (data.updatedAt == request.time));
+    }
+
+    function isValidHabit(data, isCreate) {
+      return data.keys().hasAll(['userId', 'name', 'frequency', 'streak', 'bestStreak', 'history', 'paused']) &&
+             data.userId == request.auth.uid &&
+             data.name is string && data.name.size() <= 200 &&
+             data.frequency is string && data.frequency.size() <= 20 &&
+             data.streak is number &&
+             data.bestStreak is number &&
+             data.paused is bool &&
+             (isCreate ? (data.createdAt == request.time) : (data.updatedAt == request.time));
+    }
+
+    function isValidPreference(data, isCreate) {
+      return data.keys().hasAll(['userId', 'darkMode', 'themeColor']) &&
+             data.userId == request.auth.uid &&
+             data.darkMode is bool &&
+             data.themeColor is string && data.themeColor.size() <= 50 &&
+             (!isCreate ? (data.updatedAt == request.time) : true);
+    }
+
+    // Rules for /users/{userId}
+    match /users/{userId} {
+      match /tasks/{taskId} {
+        allow read: if isOwner(userId) && isValidId(taskId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        
+        allow create: if isOwner(userId) && 
+                      isValidId(taskId) && 
+                      isValidTask(incoming(), true);
+                      
+        allow update: if isOwner(userId) && 
+                      isValidId(taskId) && 
+                      isValidTask(incoming(), false) &&
+                      incoming().userId == existing().userId &&
+                      incoming().createdAt == existing().createdAt;
+                      
+        allow delete: if isOwner(userId) && isValidId(taskId);
+      }
+
+      match /habits/{habitId} {
+        allow read: if isOwner(userId) && isValidId(habitId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        
+        allow create: if isOwner(userId) && 
+                      isValidId(habitId) && 
+                      isValidHabit(incoming(), true);
+                      
+        allow update: if isOwner(userId) && 
+                      isValidId(habitId) && 
+                      isValidHabit(incoming(), false) &&
+                      incoming().userId == existing().userId &&
+                      incoming().createdAt == existing().createdAt;
+                      
+        allow delete: if isOwner(userId) && isValidId(habitId);
+      }
+
+      match /preferences/{preferenceId} {
+        allow read: if isOwner(userId) && isValidId(preferenceId);
+        allow list: if isOwner(userId) && resource.data.userId == request.auth.uid;
+        
+        allow create: if isOwner(userId) && 
+                      isValidId(preferenceId) && 
+                      isValidPreference(incoming(), true);
+                      
+        allow update: if isOwner(userId) && 
+                      isValidId(preferenceId) && 
+                      isValidPreference(incoming(), false) &&
+                      incoming().userId == existing().userId;
+                      
+        allow delete: if isOwner(userId) && isValidId(preferenceId);
+      }
+    }
+  }
+}

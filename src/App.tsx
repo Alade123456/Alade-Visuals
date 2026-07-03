@@ -6,6 +6,19 @@ import {
   Settings, Award, Flame, CheckCircle, Clock, Pin,
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle
 } from 'lucide-react';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { auth } from './firebase';
+import { 
+  supabase, 
+  isSupabaseConfigured, 
+  syncPullAll, 
+  syncPushAll, 
+  mapTaskToDb, 
+  mapHabitToDb, 
+  mapCategoryToDb, 
+  mapAchievementToDb, 
+  mapPreferencesToDb 
+} from './supabase';
 
 import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval } from './types';
 import { 
@@ -22,8 +35,108 @@ import CalendarView from './components/CalendarView';
 import AnalyticsView from './components/AnalyticsView';
 import AchievementsView from './components/AchievementsView';
 import TaskCreationModal from './components/TaskCreationModal';
+import SignIn from './components/SignIn';
 
 export default function App() {
+  // --- AUTH STATE ---
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('aura_auth') === 'true';
+  });
+  const [authLoading, setAuthLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [isPulling, setIsPulling] = useState(false);
+
+  useEffect(() => {
+    let unsubscribeFirebase: (() => void) | undefined;
+    let unsubscribeSupabase: (() => void) | undefined;
+
+    if (isSupabaseConfigured) {
+      // 1. Supabase Auth Listener
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          setIsAuthenticated(true);
+          setUserId(session.user.id);
+          localStorage.setItem('aura_auth', 'true');
+        } else {
+          setIsAuthenticated(false);
+          setUserId(null);
+          localStorage.removeItem('aura_auth');
+        }
+        setAuthLoading(false);
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setIsAuthenticated(true);
+          setUserId(session.user.id);
+          localStorage.setItem('aura_auth', 'true');
+        } else {
+          setIsAuthenticated(false);
+          setUserId(null);
+          localStorage.removeItem('aura_auth');
+        }
+        setAuthLoading(false);
+      });
+
+      unsubscribeSupabase = () => subscription.unsubscribe();
+    } else {
+      // 2. Firebase Auth Listener Fallback
+      unsubscribeFirebase = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          setIsAuthenticated(true);
+          setUserId(user.uid);
+          localStorage.setItem('aura_auth', 'true');
+        } else {
+          setIsAuthenticated(false);
+          setUserId(null);
+          localStorage.removeItem('aura_auth');
+        }
+        setAuthLoading(false);
+      });
+    }
+
+    return () => {
+      if (unsubscribeFirebase) unsubscribeFirebase();
+      if (unsubscribeSupabase) unsubscribeSupabase();
+    };
+  }, []);
+
+  // --- SUPABASE SYNC PULL ---
+  useEffect(() => {
+    const pullData = async () => {
+      if (!isSupabaseConfigured || !userId) return;
+      setIsPulling(true);
+      try {
+        const data = await syncPullAll(userId);
+        if (data) {
+          if (data.tasks && data.tasks.length > 0) setTasks(data.tasks);
+          if (data.habits && data.habits.length > 0) setHabits(data.habits);
+          if (data.categories && data.categories.length > 0) setCategories(data.categories);
+          if (data.achievements && data.achievements.length > 0) setAchievements(data.achievements);
+          if (data.preferences) setPreferences(data.preferences);
+
+          // If user has zero cloud data, sync our current local data to seed Supabase
+          const hasNoCloudData = (!data.tasks || data.tasks.length === 0) && (!data.habits || data.habits.length === 0);
+          if (hasNoCloudData) {
+            await syncPushAll(userId, {
+              tasks,
+              habits,
+              categories,
+              achievements,
+              preferences
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Error loading data from Supabase:", err);
+      } finally {
+        setIsPulling(false);
+      }
+    };
+
+    pullData();
+  }, [userId]);
+
   // --- CORE STATE ENGINE ---
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('aura_tasks');
@@ -78,26 +191,98 @@ export default function App() {
 
   // --- SYNC ENGINE ---
   useEffect(() => {
+    const saved = localStorage.getItem('aura_tasks');
+    const oldTasks: Task[] = saved ? JSON.parse(saved) : [];
+
     localStorage.setItem('aura_tasks', JSON.stringify(tasks));
     checkAchievements();
+
+    if (isSupabaseConfigured && userId && !isPulling) {
+      const deletedIds = oldTasks.filter(oldT => !tasks.some(newT => newT.id === oldT.id)).map(oldT => oldT.id);
+      
+      if (deletedIds.length > 0) {
+        supabase.from('tasks').delete().in('id', deletedIds).then(({ error }) => {
+          if (error) console.error("Error deleting tasks from Supabase:", error);
+        });
+      }
+
+      if (tasks.length > 0) {
+        supabase.from('tasks').upsert(tasks.map(t => mapTaskToDb(t, userId))).then(({ error }) => {
+          if (error) console.error("Error upserting tasks to Supabase:", error);
+        });
+      }
+    }
   }, [tasks]);
 
   useEffect(() => {
+    const saved = localStorage.getItem('aura_habits');
+    const oldHabits: Habit[] = saved ? JSON.parse(saved) : [];
+
     localStorage.setItem('aura_habits', JSON.stringify(habits));
     checkAchievements();
+
+    if (isSupabaseConfigured && userId && !isPulling) {
+      const deletedIds = oldHabits.filter(oldH => !habits.some(newH => newH.id === oldH.id)).map(oldH => oldH.id);
+      
+      if (deletedIds.length > 0) {
+        supabase.from('habits').delete().in('id', deletedIds).then(({ error }) => {
+          if (error) console.error("Error deleting habits from Supabase:", error);
+        });
+      }
+
+      if (habits.length > 0) {
+        supabase.from('habits').upsert(habits.map(h => mapHabitToDb(h, userId))).then(({ error }) => {
+          if (error) console.error("Error upserting habits to Supabase:", error);
+        });
+      }
+    }
   }, [habits]);
 
   useEffect(() => {
+    const saved = localStorage.getItem('aura_categories');
+    const oldCategories: Category[] = saved ? JSON.parse(saved) : [];
+
     localStorage.setItem('aura_categories', JSON.stringify(categories));
+
+    if (isSupabaseConfigured && userId && !isPulling) {
+      const deletedIds = oldCategories.filter(oldC => !categories.some(newC => newC.id === oldC.id)).map(oldC => oldC.id);
+      
+      if (deletedIds.length > 0) {
+        supabase.from('categories').delete().in('id', deletedIds).then(({ error }) => {
+          if (error) console.error("Error deleting categories from Supabase:", error);
+        });
+      }
+
+      const customCats = categories.filter(c => c.isCustom);
+      if (customCats.length > 0) {
+        supabase.from('categories').upsert(customCats.map(c => mapCategoryToDb(c, userId))).then(({ error }) => {
+          if (error) console.error("Error upserting categories to Supabase:", error);
+        });
+      }
+    }
   }, [categories]);
 
   useEffect(() => {
     localStorage.setItem('aura_achievements', JSON.stringify(achievements));
+
+    if (isSupabaseConfigured && userId && !isPulling) {
+      if (achievements.length > 0) {
+        supabase.from('achievements').upsert(achievements.map(a => mapAchievementToDb(a, userId))).then(({ error }) => {
+          if (error) console.error("Error upserting achievements to Supabase:", error);
+        });
+      }
+    }
   }, [achievements]);
 
   useEffect(() => {
     localStorage.setItem('aura_preferences', JSON.stringify(preferences));
     applyThemeAndColor();
+
+    if (isSupabaseConfigured && userId && !isPulling) {
+      supabase.from('preferences').upsert(mapPreferencesToDb(preferences, userId)).then(({ error }) => {
+        if (error) console.error("Error upserting preferences to Supabase:", error);
+      });
+    }
   }, [preferences]);
 
   // Rotates motivation quote daily or on click
@@ -444,6 +629,36 @@ export default function App() {
     overdue: filteredTasksList.filter(t => t.dueDate < todayStr && !t.completed && !t.pinned),
     completed: filteredTasksList.filter(t => t.completed)
   };
+
+  const handleSignIn = () => {
+    // This is now handled by the Firebase auth listener, but we can keep it for the SignIn component success callback
+    setIsAuthenticated(true);
+    localStorage.setItem('aura_auth', 'true');
+  };
+
+  const handleSignOut = async () => {
+    if (isSupabaseConfigured) {
+      await supabase.auth.signOut();
+    } else {
+      await signOut(auth);
+    }
+    setIsAuthenticated(false);
+    setUserId(null);
+    localStorage.removeItem('aura_auth');
+    setActiveTab('home');
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <SignIn onSignIn={handleSignIn} />;
+  }
 
   return (
     <div className={`min-h-screen bg-gray-50 dark:bg-slate-950 pb-24 text-gray-900 dark:text-slate-100 transition-colors duration-300`}>
@@ -1105,6 +1320,15 @@ export default function App() {
                           className="flex-1 py-2 rounded-xl bg-slate-100 hover:bg-red-50 dark:hover:bg-red-950/20 text-red-600 font-semibold text-center flex items-center justify-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-800"
                         >
                           <RotateCcw className="w-3.5 h-3.5" /> Seed Reset
+                        </button>
+                      </div>
+
+                      <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
+                        <button
+                          onClick={handleSignOut}
+                          className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-center flex items-center justify-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-800"
+                        >
+                          Sign Out
                         </button>
                       </div>
                     </div>

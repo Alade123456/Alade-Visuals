@@ -13,8 +13,8 @@ export default defineConfig(() => {
         registerType: 'autoUpdate',
         includeAssets: ['icon-192.png', 'icon-512.png'],
         manifest: {
-          name: 'Prodify',
-          short_name: 'Prodify',
+          name: 'GoalsMi',
+          short_name: 'GoalsMi',
           description: 'Productivity & Habits Planner',
           theme_color: '#3B82F6',
           icons: [

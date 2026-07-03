@@ -1,5 +1,5 @@
 {
-  "name": "Productivity & Habits Planner",
+  "name": "GoalsMi",
   "description": "A minimalist, elegant mobile personal productivity application featuring task checklists, recurring habit tracking, interactive SVG trend metrics, month calendar activity logs, and achievement milestone badges.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
