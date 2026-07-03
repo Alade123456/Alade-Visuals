@@ -4,6 +4,9 @@ import {
   Flame, Activity, CheckCircle, TrendingUp, Calendar, 
   Clock, Target, Award, ArrowUpRight, BarChart3, AlertCircle 
 } from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer 
+} from 'recharts';
 import { Task, Habit } from '../types';
 import { formatDate, getOffsetDate, getDayOfWeekAbbr } from '../utils';
 
@@ -190,6 +193,28 @@ export default function AnalyticsView({ tasks, habits }: AnalyticsViewProps) {
   };
 
   const heatmapDays = getHeatmapGrid();
+
+  // 6. Habit Recharts Bar Chart Data (Weekly Consistency & Best Streak in Days)
+  const getHabitChartData = () => {
+    return habits.map(h => {
+      let completedLast7Days = 0;
+      for (let i = 0; i < 7; i++) {
+        const dateStr = getOffsetDate(-i);
+        if (h.history && h.history[dateStr] === true) {
+          completedLast7Days++;
+        }
+      }
+      return {
+        name: h.name.length > 15 ? h.name.slice(0, 15) + '...' : h.name,
+        fullName: h.name,
+        consistency: completedLast7Days,
+        bestStreak: h.bestStreak || 0,
+        color: h.colorLabel || '#3b82f6',
+      };
+    });
+  };
+
+  const habitChartData = getHabitChartData();
 
   return (
     <div className="space-y-6" id="analytics-container">
@@ -451,6 +476,86 @@ export default function AnalyticsView({ tasks, habits }: AnalyticsViewProps) {
               </div>
               <span>Highly productive</span>
             </div>
+          </div>
+
+          {/* Recharts Bar Chart for Habit Weekly Consistency & Best Streaks */}
+          <div className="minimal-card p-5 shadow-sm space-y-4" id="habit-recharts-card">
+            <div className="flex justify-between items-center">
+              <div>
+                <h4 className="font-display font-bold text-slate-800 dark:text-white text-sm">
+                  Habit Consistency & Best Streaks
+                </h4>
+                <p className="text-[10px] text-slate-400">Comparing last 7 days completions vs. all-time best streaks (in days)</p>
+              </div>
+              <BarChart3 className="w-4 h-4 text-emerald-500" />
+            </div>
+
+            {habitChartData.length === 0 ? (
+              <div className="rounded-[24px] border border-dashed border-gray-200 dark:border-slate-850 p-8 text-center bg-slate-50 dark:bg-slate-850/50">
+                <AlertCircle className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
+                <p className="text-xs text-slate-500 dark:text-slate-400">No habits available for consistency tracking.</p>
+              </div>
+            ) : (
+              <div className="h-64 w-full" id="recharts-habit-bar-chart-container">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={habitChartData}
+                    margin={{ top: 10, right: 10, left: -20, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" className="dark:stroke-slate-800" />
+                    <XAxis 
+                      dataKey="name" 
+                      tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 500 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis 
+                      tick={{ fill: '#94a3b8', fontSize: 10 }} 
+                      axisLine={false}
+                      tickLine={false}
+                      allowDecimals={false}
+                    />
+                    <RechartsTooltip
+                      contentStyle={{
+                        backgroundColor: '#1e293b',
+                        border: 'none',
+                        borderRadius: '12px',
+                        color: '#f8fafc',
+                        fontSize: '11px',
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                      }}
+                      itemStyle={{ color: '#f8fafc' }}
+                      labelStyle={{ fontWeight: 'bold', color: '#94a3b8', marginBottom: '4px' }}
+                      formatter={(value: any, name: any) => {
+                        const labelName = name === 'Weekly Consistency (Days)' ? 'Weekly Consistency' : 'Best Streak';
+                        return [`${value} days`, labelName];
+                      }}
+                    />
+                    <Legend 
+                      verticalAlign="top" 
+                      height={36} 
+                      iconType="circle"
+                      iconSize={8}
+                      wrapperStyle={{ fontSize: '10px', fontWeight: 600 }}
+                    />
+                    <Bar 
+                      dataKey="consistency" 
+                      name="Weekly Consistency (Days)" 
+                      fill="#3b82f6" 
+                      radius={[4, 4, 0, 0]} 
+                      maxBarSize={30}
+                    />
+                    <Bar 
+                      dataKey="bestStreak" 
+                      name="Best Streak (Days)" 
+                      fill="#10b981" 
+                      radius={[4, 4, 0, 0]} 
+                      maxBarSize={30}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
           </div>
 
           {/* Custom SVG Line Chart (Trend Over Last 5 Days) */}

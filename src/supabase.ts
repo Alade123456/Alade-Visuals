@@ -242,6 +242,10 @@ export function mapPreferencesToDb(prefs: UserPreferences, userId: string) {
     time_format: prefs.timeFormat,
     default_home_mode: prefs.defaultHomeMode,
     theme_color: prefs.themeColor,
+    daily_goal: prefs.dailyGoal,
+    daily_goal_date: prefs.dailyGoalDate,
+    daily_goal_completed: prefs.dailyGoalCompleted,
+    daily_goal_completed_date: prefs.dailyGoalCompletedDate,
   };
 }
 
@@ -254,6 +258,10 @@ export function mapPreferencesFromDb(row: any): UserPreferences {
     timeFormat: row.time_format || '12h',
     defaultHomeMode: row.default_home_mode || 'Productivity',
     themeColor: row.theme_color || 'indigo',
+    dailyGoal: row.daily_goal || '',
+    dailyGoalDate: row.daily_goal_date || '',
+    dailyGoalCompleted: !!row.daily_goal_completed,
+    dailyGoalCompletedDate: row.daily_goal_completed_date || '',
   };
 }
 

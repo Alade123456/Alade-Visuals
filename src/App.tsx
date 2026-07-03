@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Plus, Search, Filter, ArrowUpDown, Sparkles, 
   Download, Moon, Sun, Bell, BookOpen, Info, 
   Settings, Award, Flame, CheckCircle, Clock, Pin,
-  Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle
+  Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
+  Play, Pause, Square, X
 } from 'lucide-react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from './firebase';
@@ -20,7 +21,7 @@ import {
   mapPreferencesToDb 
 } from './supabase';
 
-import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval } from './types';
+import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval, DailyGoalHistoryItem } from './types';
 import { 
   getInitialTasks, getInitialHabits, INITIAL_ACHIEVEMENTS, 
   DEFAULT_CATEGORIES, DEFAULT_PREFERENCES, PRODUCTIVITY_QUOTES,
@@ -44,7 +45,12 @@ export default function App() {
   });
   const [authLoading, setAuthLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isPulling, setIsPulling] = useState(false);
+
+  // --- SCROLL PRESERVATION REFS ---
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const tabScrollPositions = useRef<{ [key in TabId]?: number }>({});
 
   useEffect(() => {
     let unsubscribeFirebase: (() => void) | undefined;
@@ -56,10 +62,12 @@ export default function App() {
         if (session?.user) {
           setIsAuthenticated(true);
           setUserId(session.user.id);
+          setUserEmail(session.user.email || null);
           localStorage.setItem('aura_auth', 'true');
         } else {
           setIsAuthenticated(false);
           setUserId(null);
+          setUserEmail(null);
           localStorage.removeItem('aura_auth');
         }
         setAuthLoading(false);
@@ -69,10 +77,12 @@ export default function App() {
         if (session?.user) {
           setIsAuthenticated(true);
           setUserId(session.user.id);
+          setUserEmail(session.user.email || null);
           localStorage.setItem('aura_auth', 'true');
         } else {
           setIsAuthenticated(false);
           setUserId(null);
+          setUserEmail(null);
           localStorage.removeItem('aura_auth');
         }
         setAuthLoading(false);
@@ -85,10 +95,12 @@ export default function App() {
         if (user) {
           setIsAuthenticated(true);
           setUserId(user.uid);
+          setUserEmail(user.email || null);
           localStorage.setItem('aura_auth', 'true');
         } else {
           setIsAuthenticated(false);
           setUserId(null);
+          setUserEmail(null);
           localStorage.removeItem('aura_auth');
         }
         setAuthLoading(false);
@@ -163,7 +175,48 @@ export default function App() {
     return saved ? JSON.parse(saved) : DEFAULT_PREFERENCES;
   });
 
+  const [dailyGoalsHistory, setDailyGoalsHistory] = useState<DailyGoalHistoryItem[]>(() => {
+    const saved = localStorage.getItem('aura_daily_goals_history');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return [
+      {
+        id: 'dg-seed-1',
+        goal: 'Design high-fidelity product dashboard mockup',
+        date: getOffsetDate(-1),
+        completed: true,
+        completedDate: getOffsetDate(-1)
+      },
+      {
+        id: 'dg-seed-2',
+        goal: 'Setup PostgreSQL database schema and migrations',
+        date: getOffsetDate(-2),
+        completed: true,
+        completedDate: getOffsetDate(-2)
+      },
+      {
+        id: 'dg-seed-3',
+        goal: 'Write technical architecture design document',
+        date: getOffsetDate(-3),
+        completed: true,
+        completedDate: getOffsetDate(-3)
+      }
+    ];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('aura_daily_goals_history', JSON.stringify(dailyGoalsHistory));
+  }, [dailyGoalsHistory]);
+
   const [activeTab, setActiveTab] = useState<TabId>(() => {
+    const savedScreen = localStorage.getItem('aura_active_tab') as TabId;
+    if (savedScreen) return savedScreen;
+
     const saved = localStorage.getItem('aura_preferences');
     if (saved) {
       const prefs: UserPreferences = JSON.parse(saved);
@@ -172,22 +225,366 @@ export default function App() {
     return 'home';
   });
 
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
+
   // Modal Control
   const [isCreationOpen, setIsCreationOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // Micro-interaction states
   const [showConfetti, setShowConfetti] = useState(false);
+
+  const confettiPieces = React.useMemo(() => {
+    if (!showConfetti) return [];
+    return Array.from({ length: 150 }).map((_, i) => {
+      const sizeRandom = Math.random();
+      const width = 6 + sizeRandom * 10; // 6px to 16px
+      const height = 8 + Math.random() * 12; // 8px to 20px
+      const shapeVal = Math.random();
+      let borderRadius = '0px';
+      if (shapeVal > 0.7) {
+        borderRadius = '50%';
+      } else if (shapeVal > 0.4) {
+        borderRadius = '20px';
+      } else if (shapeVal > 0.1) {
+        borderRadius = '2px';
+      }
+      
+      const colors = [
+        '#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', 
+        '#a855f7', '#06b6d4', '#f43f5e', '#14b8a6', '#f97316'
+      ];
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      
+      const animationDuration = 1.8 + Math.random() * 3.2; // 1.8s to 5.0s
+      const animationDelay = Math.random() * 2.5; // 0s to 2.5s
+      const animationName = ['confetti-fall-a', 'confetti-fall-b', 'confetti-fall-c'][Math.floor(Math.random() * 3)];
+      
+      return {
+        id: i,
+        left: `${Math.random() * 100}%`,
+        backgroundColor: color,
+        width: `${width}px`,
+        height: `${height}px`,
+        borderRadius,
+        animation: `${animationName} ${animationDuration}s cubic-bezier(0.25, 0.46, 0.45, 0.94) ${animationDelay}s forwards`,
+        opacity: 0.8 + Math.random() * 0.2,
+      };
+    });
+  }, [showConfetti]);
+
   const [quoteIdx, setQuoteIdx] = useState(0);
 
   // Search & Filters (for Tasks screen)
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
-  const [selectedPriority, setSelectedPriority] = useState<string>('All');
-  const [sortBy, setSortBy] = useState<'time' | 'priority' | 'name'>('time');
+  const [searchQuery, setSearchQuery] = useState(() => localStorage.getItem('aura_search_query') || '');
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => localStorage.getItem('aura_selected_category') || 'All');
+  const [selectedPriority, setSelectedPriority] = useState<string>(() => localStorage.getItem('aura_selected_priority') || 'All');
+  const [sortBy, setSortBy] = useState<'time' | 'priority' | 'name'>(() => (localStorage.getItem('aura_sort_by') as any) || 'time');
 
   // Segmented Control (for Home screen)
-  const [homeSegment, setHomeSegment] = useState<'today' | 'upcoming' | 'habits'>('today');
+  const [homeSegment, setHomeSegment] = useState<'today' | 'upcoming' | 'habits' | 'history'>('today');
+
+  // Daily Goal check-in state
+  const [dailyGoalInput, setDailyGoalInput] = useState(() => {
+    return localStorage.getItem('aura_draft_goal_input') || '';
+  });
+  const [isEditingDailyGoal, setIsEditingDailyGoal] = useState(false);
+  const [displayName, setDisplayName] = useState('Alade');
+
+  // --- FOCUS TIMER STATES ---
+  const [focusDuration, setFocusDuration] = useState<number>(() => {
+    const saved = localStorage.getItem('aura_focus_duration');
+    return saved ? parseInt(saved, 10) : 25; // Default to 25 minutes
+  });
+
+  const [timerState, setTimerState] = useState<'idle' | 'running' | 'paused' | 'completed'>(() => {
+    const saved = localStorage.getItem('aura_timer_state') as any;
+    if (saved === 'running') {
+      const savedEndTime = localStorage.getItem('aura_timer_end_time');
+      if (savedEndTime) {
+        const remaining = Math.max(0, Math.ceil((parseInt(savedEndTime, 10) - Date.now()) / 1000));
+        if (remaining > 0) return 'running';
+        return 'completed';
+      }
+    }
+    return saved || 'idle';
+  });
+
+  const [endTime, setEndTime] = useState<number | null>(() => {
+    const savedEndTime = localStorage.getItem('aura_timer_end_time');
+    if (savedEndTime) {
+      const remaining = Math.max(0, Math.ceil((parseInt(savedEndTime, 10) - Date.now()) / 1000));
+      if (remaining > 0) return parseInt(savedEndTime, 10);
+    }
+    return null;
+  });
+
+  const [pausedTimeLeft, setPausedTimeLeft] = useState<number | null>(() => {
+    const savedPaused = localStorage.getItem('aura_timer_paused_time_left');
+    return savedPaused ? parseInt(savedPaused, 10) : null;
+  });
+
+  const [timeLeft, setTimeLeft] = useState<number>(() => {
+    const savedState = localStorage.getItem('aura_timer_state');
+    if (savedState === 'running') {
+      const savedEndTime = localStorage.getItem('aura_timer_end_time');
+      if (savedEndTime) {
+        const remaining = Math.max(0, Math.ceil((parseInt(savedEndTime, 10) - Date.now()) / 1000));
+        return remaining;
+      }
+    } else if (savedState === 'paused') {
+      const savedPaused = localStorage.getItem('aura_timer_paused_time_left');
+      if (savedPaused) return parseInt(savedPaused, 10);
+    } else if (savedState === 'completed') {
+      return 0;
+    }
+    const savedDuration = localStorage.getItem('aura_focus_duration');
+    const dur = savedDuration ? parseInt(savedDuration, 10) : 25;
+    return dur * 60; // in seconds
+  });
+  
+  const [showConfirmStop, setShowConfirmStop] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [pickerDuration, setPickerDuration] = useState(25);
+  const [isEditingPicker, setIsEditingPicker] = useState(false);
+
+  // --- SESSION PERSISTENCE SYNC EFFECTS ---
+  useEffect(() => {
+    localStorage.setItem('aura_active_tab', activeTab);
+  }, [activeTab]);
+
+  useEffect(() => {
+    localStorage.setItem('aura_search_query', searchQuery);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    localStorage.setItem('aura_selected_category', selectedCategory);
+  }, [selectedCategory]);
+
+  useEffect(() => {
+    localStorage.setItem('aura_selected_priority', selectedPriority);
+  }, [selectedPriority]);
+
+  useEffect(() => {
+    localStorage.setItem('aura_sort_by', sortBy);
+  }, [sortBy]);
+
+  useEffect(() => {
+    if (dailyGoalInput) {
+      localStorage.setItem('aura_draft_goal_input', dailyGoalInput);
+    } else {
+      localStorage.removeItem('aura_draft_goal_input');
+    }
+  }, [dailyGoalInput]);
+
+  useEffect(() => {
+    localStorage.setItem('aura_timer_state', timerState);
+    if (endTime !== null) {
+      localStorage.setItem('aura_timer_end_time', endTime.toString());
+    } else {
+      localStorage.removeItem('aura_timer_end_time');
+    }
+    if (pausedTimeLeft !== null) {
+      localStorage.setItem('aura_timer_paused_time_left', pausedTimeLeft.toString());
+    } else {
+      localStorage.removeItem('aura_timer_paused_time_left');
+    }
+  }, [timerState, endTime, pausedTimeLeft]);
+
+  // Tab scroll restoration handler
+  const handleTabChange = (newTab: TabId) => {
+    if (scrollContainerRef.current) {
+      tabScrollPositions.current[activeTab] = scrollContainerRef.current.scrollTop;
+    }
+    setActiveTab(newTab);
+  };
+
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      const savedPos = tabScrollPositions.current[activeTab] || 0;
+      setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = savedPos;
+        }
+      }, 50);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (preferences.dailyGoal) {
+      setDailyGoalInput(preferences.dailyGoal);
+    } else {
+      setDailyGoalInput('');
+    }
+  }, [preferences.dailyGoal]);
+
+  useEffect(() => {
+    if (isSupabaseConfigured) {
+      supabase.auth.getUser().then(({ data: { user } }) => {
+        if (user) {
+          const name = user.user_metadata?.full_name || user.email?.split('@')[0] || 'Alade';
+          const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
+          setDisplayName(formattedName);
+        }
+      });
+    } else {
+      const unsubscribe = onAuthStateChanged(auth, (user) => {
+        if (user) {
+          const rawName = user.displayName || user.email?.split('@')[0] || 'Alade';
+          const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+          setDisplayName(formattedName);
+        }
+      });
+      return unsubscribe;
+    }
+  }, [userId]);
+
+  // --- FOCUS TIMER EFFECTS ---
+  useEffect(() => {
+    if ('Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    if (timerState === 'idle' || timerState === 'completed') {
+      setTimeLeft(focusDuration * 60);
+    }
+  }, [focusDuration, timerState]);
+
+  useEffect(() => {
+    if (timerState === 'running') {
+      const mins = Math.floor(timeLeft / 60);
+      const secs = timeLeft % 60;
+      document.title = `(${mins}:${secs.toString().padStart(2, '0')}) Focus | Aura Planner`;
+    } else {
+      document.title = 'Aura Planner';
+    }
+    return () => {
+      document.title = 'Aura Planner';
+    };
+  }, [timerState, timeLeft]);
+
+  useEffect(() => {
+    if (timerState !== 'running' || endTime === null) return;
+
+    const interval = setInterval(() => {
+      const now = Date.now();
+      const remaining = Math.max(0, Math.ceil((endTime - now) / 1000));
+      setTimeLeft(remaining);
+
+      if (document.visibilityState === 'hidden' && 'Notification' in window && Notification.permission === 'granted') {
+        const lastNotifiedStr = localStorage.getItem('aura_last_notified') || '0';
+        const lastNotified = parseInt(lastNotifiedStr, 10);
+        
+        if (now - lastNotified >= 25000 || remaining <= 5) {
+          localStorage.setItem('aura_last_notified', now.toString());
+          try {
+            new Notification('Focus Session Running', {
+              body: `${Math.floor(remaining / 60)}:${(remaining % 60).toString().padStart(2, '0')} remaining. Keep going on: ${preferences.dailyGoal || 'your primary focus'}`,
+              tag: 'aura-focus-timer',
+              silent: true,
+            });
+          } catch (e) {
+            console.error('Error sending hidden notification:', e);
+          }
+        }
+      }
+
+      if (remaining <= 0) {
+        clearInterval(interval);
+        setTimerState('completed');
+        setEndTime(null);
+        setPausedTimeLeft(null);
+
+        const todayStrVal = formatDate(new Date());
+        setPreferences(prev => ({
+          ...prev,
+          dailyGoalCompleted: true,
+          dailyGoalCompletedDate: todayStrVal
+        }));
+        
+        setDailyGoalsHistory(prev => {
+          const updated = [...prev];
+          const idx = updated.findIndex(item => item.date === todayStrVal);
+          if (idx >= 0) {
+            updated[idx] = {
+              ...updated[idx],
+              completed: true,
+              completedDate: todayStrVal
+            };
+          } else if (preferences.dailyGoal) {
+            updated.push({
+              id: `dg-${Date.now()}`,
+              goal: preferences.dailyGoal,
+              date: todayStrVal,
+              completed: true,
+              completedDate: todayStrVal
+            });
+          }
+          return updated;
+        });
+
+        triggerConfetti();
+
+        if ('Notification' in window && Notification.permission === 'granted') {
+          try {
+            new Notification('Session Completed! 🎉', {
+              body: `Fantastic job! You've completed your focus duration of ${focusDuration} minutes.`,
+              tag: 'aura-focus-timer',
+              silent: false,
+            });
+          } catch (e) {
+            console.error(e);
+          }
+        }
+      }
+    }, 250);
+
+    return () => clearInterval(interval);
+  }, [timerState, endTime, preferences.dailyGoal, focusDuration]);
+
+  const handleStartTimer = () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    
+    const durationInSeconds = pausedTimeLeft !== null ? pausedTimeLeft : focusDuration * 60;
+    setEndTime(Date.now() + durationInSeconds * 1000);
+    setTimerState('running');
+    setPausedTimeLeft(null);
+  };
+
+  const handlePauseTimer = () => {
+    if (timerState !== 'running' || endTime === null) return;
+    const remaining = Math.max(0, Math.ceil((endTime - Date.now()) / 1000));
+    setPausedTimeLeft(remaining);
+    setTimerState('paused');
+    setEndTime(null);
+  };
+
+  const handleStopTimer = () => {
+    if (timerState === 'running' || timerState === 'paused') {
+      setShowConfirmStop(true);
+    } else {
+      setTimerState('idle');
+      setTimeLeft(focusDuration * 60);
+      setEndTime(null);
+      setPausedTimeLeft(null);
+    }
+  };
+
+  const handleConfirmStopTimer = (confirm: boolean) => {
+    setShowConfirmStop(false);
+    if (confirm) {
+      setTimerState('idle');
+      setTimeLeft(focusDuration * 60);
+      setEndTime(null);
+      setPausedTimeLeft(null);
+    }
+  };
 
   // --- SYNC ENGINE ---
   useEffect(() => {
@@ -644,14 +1041,51 @@ export default function App() {
     }
     setIsAuthenticated(false);
     setUserId(null);
+    setUserEmail(null);
     localStorage.removeItem('aura_auth');
+    localStorage.removeItem('aura_timer_state');
+    localStorage.removeItem('aura_timer_end_time');
+    localStorage.removeItem('aura_timer_paused_time_left');
+    localStorage.removeItem('aura_active_tab');
+    localStorage.removeItem('aura_draft_goal_input');
+    
+    setTimerState('idle');
+    setTimeLeft(focusDuration * 60);
+    setEndTime(null);
+    setPausedTimeLeft(null);
     setActiveTab('home');
   };
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-slate-900 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+      <div className="min-h-screen bg-white dark:bg-slate-900 flex flex-col items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.5 }}
+          className="text-center"
+        >
+          {/* GoalMi Logo */}
+          <motion.div
+            initial={{ scale: 0.8 }}
+            animate={{ scale: 1 }}
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="w-20 h-20 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/25"
+          >
+            <span className="text-white text-4xl font-bold font-sans">G</span>
+          </motion.div>
+          
+          {/* App Name */}
+          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">GoalsMi</h1>
+          <p className="text-slate-500 dark:text-slate-400 text-sm font-medium mb-8">Productive Mindset</p>
+          
+          {/* Subtle Loading Animation */}
+          <div className="flex justify-center items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '0ms' }} />
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '150ms' }} />
+            <span className="w-2 h-2 rounded-full bg-blue-500 animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+        </motion.div>
       </div>
     );
   }
@@ -669,16 +1103,18 @@ export default function App() {
       {/* Confetti Visualizer Overlay */}
       {showConfetti && (
         <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden" id="confetti-container">
-          {Array.from({ length: 40 }).map((_, i) => (
+          {confettiPieces.map((piece) => (
             <div
-              key={i}
+              key={piece.id}
               className="confetti-piece"
               style={{
-                left: `${Math.random() * 100}%`,
-                backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'][Math.floor(Math.random() * 5)],
-                animationDelay: `${Math.random() * 2}s`,
-                animationDuration: `${2 + Math.random() * 2}s`,
-                transform: `rotate(${Math.random() * 360}deg)`
+                left: piece.left,
+                backgroundColor: piece.backgroundColor,
+                width: piece.width,
+                height: piece.height,
+                borderRadius: piece.borderRadius,
+                animation: piece.animation,
+                opacity: piece.opacity,
               }}
             />
           ))}
@@ -723,7 +1159,7 @@ export default function App() {
         </header>
 
         {/* CONTAINER ROUTING */}
-        <div className="flex-1 px-5 py-4 overflow-y-auto no-scrollbar pb-16">
+        <div ref={scrollContainerRef} className="flex-1 px-5 py-4 overflow-y-auto no-scrollbar pb-16">
           <AnimatePresence mode="wait">
             <motion.div
               key={activeTab}
@@ -741,7 +1177,7 @@ export default function App() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h2 className="font-display font-bold text-2xl text-slate-900 dark:text-white">
-                        Hi, Alade! 👋
+                        Hi, {displayName}! 👋
                       </h2>
                       <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                         You've completed {todayStats.pct}% of your goals today.
@@ -781,6 +1217,363 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Daily Check-In Prompt / Focus Block */}
+                  {(!preferences.dailyGoal || preferences.dailyGoalDate !== todayStr || isEditingDailyGoal) ? (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-[24px] bg-gradient-to-br from-blue-500 via-indigo-500 to-violet-600 p-5 text-white shadow-lg shadow-blue-500/10 animate-fade-in"
+                      id="daily-checkin-prompt"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="p-1.5 bg-white/10 rounded-lg text-white">
+                          <Sparkles className="w-4 h-4 fill-white/10" />
+                        </span>
+                        <span className="text-xs uppercase font-bold tracking-wider text-blue-100">Daily Check-In</span>
+                      </div>
+                      <h3 className="font-display font-bold text-lg mb-3">
+                        What is your primary goal for today?
+                      </h3>
+                      <form 
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const goalText = dailyGoalInput.trim();
+                          if (!goalText) return;
+                          setPreferences(prev => ({
+                            ...prev,
+                            dailyGoal: goalText,
+                            dailyGoalDate: todayStr,
+                            dailyGoalCompleted: false,
+                            dailyGoalCompletedDate: ''
+                          }));
+                          
+                          setDailyGoalsHistory(prev => {
+                            const updated = [...prev];
+                            const idx = updated.findIndex(item => item.date === todayStr);
+                            if (idx >= 0) {
+                              updated[idx] = {
+                                ...updated[idx],
+                                goal: goalText,
+                                completed: false,
+                                completedDate: ''
+                              };
+                            } else {
+                              updated.push({
+                                id: `dg-${Date.now()}`,
+                                goal: goalText,
+                                date: todayStr,
+                                completed: false,
+                                completedDate: ''
+                              });
+                            }
+                            return updated;
+                          });
+
+                          setIsEditingDailyGoal(false);
+                          setShowConfetti(true);
+                          setTimeout(() => setShowConfetti(false), 3000);
+                        }}
+                        className="flex gap-2"
+                      >
+                        <input
+                          type="text"
+                          value={dailyGoalInput}
+                          onChange={(e) => setDailyGoalInput(e.target.value)}
+                          placeholder="e.g., Complete Quarterly Presentation..."
+                          className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-2.5 text-sm text-white placeholder-blue-100/60 focus:outline-none focus:ring-2 focus:ring-white/40 focus:bg-white/15 transition-all"
+                        />
+                        <button
+                          type="submit"
+                          disabled={!dailyGoalInput.trim()}
+                          className="px-4 py-2.5 bg-white text-blue-600 font-semibold text-sm rounded-xl hover:bg-blue-50 active:scale-95 disabled:opacity-50 disabled:scale-100 transition-all cursor-pointer flex items-center justify-center"
+                        >
+                          Confirm
+                        </button>
+                      </form>
+                    </motion.div>
+                  ) : (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 15 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="rounded-[24px] bg-white dark:bg-slate-850 p-5 border border-slate-100 dark:border-slate-800/80 shadow-sm"
+                      id="daily-focus-display"
+                    >
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex items-start gap-3 flex-1">
+                          <button
+                            onClick={() => {
+                              const isCompleted = !preferences.dailyGoalCompleted;
+                              const completedDateStr = isCompleted ? todayStr : '';
+                              setPreferences(prev => ({
+                                ...prev,
+                                dailyGoalCompleted: isCompleted,
+                                dailyGoalCompletedDate: completedDateStr
+                              }));
+                              
+                              setDailyGoalsHistory(prev => {
+                                const updated = [...prev];
+                                const idx = updated.findIndex(item => item.date === todayStr);
+                                if (idx >= 0) {
+                                  updated[idx] = {
+                                    ...updated[idx],
+                                    completed: isCompleted,
+                                    completedDate: completedDateStr
+                                  };
+                                } else if (preferences.dailyGoal) {
+                                  updated.push({
+                                    id: `dg-${Date.now()}`,
+                                    goal: preferences.dailyGoal,
+                                    date: todayStr,
+                                    completed: isCompleted,
+                                    completedDate: completedDateStr
+                                  });
+                                }
+                                return updated;
+                              });
+
+                              if (isCompleted) {
+                                setShowConfetti(true);
+                                setTimeout(() => setShowConfetti(false), 3000);
+                              }
+                            }}
+                            className={`mt-1 shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all cursor-pointer ${
+                              preferences.dailyGoalCompleted 
+                                ? 'bg-emerald-500 border-emerald-500 text-white shadow-sm shadow-emerald-500/20' 
+                                : 'border-slate-300 dark:border-slate-600 hover:border-emerald-400 dark:hover:border-emerald-500'
+                            }`}
+                          >
+                            {preferences.dailyGoalCompleted && (
+                              <svg className="w-3.5 h-3.5 stroke-[3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            )}
+                          </button>
+                          
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-1 text-slate-400 dark:text-slate-500">
+                              <span className={`w-1.5 h-1.5 rounded-full ${preferences.dailyGoalCompleted ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                              <span className="text-[10px] uppercase font-bold tracking-wider">
+                                {preferences.dailyGoalCompleted ? 'Daily Goal Completed!' : "Today's Primary Focus"}
+                              </span>
+                            </div>
+                            <h3 className={`font-display font-extrabold text-lg text-slate-900 dark:text-white leading-tight ${
+                              preferences.dailyGoalCompleted ? 'line-through text-slate-400 dark:text-slate-500 font-medium' : ''
+                            }`}>
+                              {preferences.dailyGoal}
+                            </h3>
+                          </div>
+                        </div>
+                        
+                        <button
+                          onClick={() => {
+                            setDailyGoalInput(preferences.dailyGoal || '');
+                            setIsEditingDailyGoal(true);
+                          }}
+                          className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                          title="Edit primary focus"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* --- FOCUS TIMER CARD --- */}
+                  <motion.div
+                    initial={{ opacity: 0, y: 15 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    id="focus-timer-card"
+                    className={`rounded-[24px] bg-white dark:bg-slate-850 p-5 border relative overflow-hidden transition-all duration-300 ${
+                      timerState === 'running'
+                        ? 'animate-border-pulse'
+                        : 'border-slate-100 dark:border-slate-800/80 shadow-sm'
+                    }`}
+                  >
+                    {/* Header */}
+                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="p-1.5 bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded-lg shrink-0">
+                          <Clock className="w-4 h-4" />
+                        </span>
+                        <div>
+                          <span className="text-[10px] uppercase font-extrabold tracking-wider text-slate-400 dark:text-slate-500">
+                            Focus Timer
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <button
+                        id="btn-timer-settings"
+                        onClick={() => {
+                          setPickerDuration(focusDuration);
+                          setIsSettingsOpen(true);
+                        }}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                        title="Focus Timer Settings"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Accidental Stop Confirmation Overlay inside the card */}
+                    {showConfirmStop && (
+                      <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 z-10 p-5 flex flex-col justify-center items-center text-center animate-fade-in">
+                        <AlertCircle className="w-10 h-10 text-amber-500 mb-2" />
+                        <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">
+                          Stop active session?
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[80%]">
+                          Your current focus session progress will be lost.
+                        </p>
+                        <div className="flex gap-2.5 mt-4 w-full max-w-[240px]">
+                          <button
+                            id="btn-confirm-stop-yes"
+                            onClick={() => handleConfirmStopTimer(true)}
+                            className="flex-1 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm shadow-rose-500/15"
+                          >
+                            Yes, Stop
+                          </button>
+                          <button
+                            id="btn-confirm-stop-no"
+                            onClick={() => handleConfirmStopTimer(false)}
+                            className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer"
+                          >
+                            Keep Going
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Congratulatory State inside the card */}
+                    {timerState === 'completed' ? (
+                      <div className="text-center py-4 flex flex-col items-center">
+                        <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-3">
+                          <Award className="w-8 h-8 stroke-[2.2]" />
+                        </div>
+                        <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">
+                          Fantastic Job! 🎉
+                        </h4>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[85%]">
+                          You focused successfully on: <span className="font-bold text-slate-800 dark:text-slate-200">"{preferences.dailyGoal || 'your daily objective'}"</span>
+                        </p>
+                        <button
+                          id="btn-reset-timer-done"
+                          onClick={() => {
+                            setTimerState('idle');
+                            setTimeLeft(focusDuration * 60);
+                          }}
+                          className="mt-4 px-5 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm shadow-indigo-500/20"
+                        >
+                          Start New Session
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        {/* Target Focus Goal Title */}
+                        <div className="text-center px-2">
+                          <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Currently Focusing On</p>
+                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5 line-clamp-1 italic">
+                            "{preferences.dailyGoal || 'No primary goal set for today'}"
+                          </p>
+                        </div>
+
+                        {/* Circular Progress Ring or Idle Display */}
+                        <div className="relative flex justify-center items-center py-2">
+                          <div className="relative w-36 h-36 flex items-center justify-center">
+                            <svg className="w-full h-full transform -rotate-90">
+                              <circle
+                                cx="72"
+                                cy="72"
+                                r="64"
+                                className="stroke-slate-100 dark:stroke-slate-800/80"
+                                strokeWidth="5"
+                                fill="transparent"
+                              />
+                              <motion.circle
+                                cx="72"
+                                cy="72"
+                                r="64"
+                                className="stroke-indigo-500"
+                                strokeWidth="5"
+                                fill="transparent"
+                                strokeDasharray={2 * Math.PI * 64}
+                                initial={{ strokeDashoffset: 2 * Math.PI * 64 }}
+                                animate={{
+                                  strokeDashoffset:
+                                    2 * Math.PI * 64 *
+                                    (1 - (focusDuration * 60 - timeLeft) / (focusDuration * 60))
+                                }}
+                                transition={{ duration: 0.35 }}
+                                strokeLinecap="round"
+                              />
+                            </svg>
+                            
+                            <div className="absolute flex flex-col items-center">
+                              <span className="font-mono font-extrabold text-2xl tracking-tight text-slate-800 dark:text-white">
+                                {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                              </span>
+                              
+                              {/* Percentage completed */}
+                              {timerState !== 'idle' && (
+                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5 animate-pulse">
+                                  {Math.round(((focusDuration * 60 - timeLeft) / (focusDuration * 60)) * 100)}% Done
+                                </span>
+                              )}
+                              
+                              {timerState === 'idle' && (
+                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">
+                                  {focusDuration}m Goal
+                                </span>
+                              )}
+                              
+                              {timerState === 'paused' && (
+                                <span className="text-[10px] font-bold text-amber-500 mt-0.5 uppercase tracking-wide">
+                                  Paused
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Controls */}
+                        <div className="flex justify-center items-center gap-3">
+                          {/* Play / Start Button */}
+                          {timerState !== 'running' ? (
+                            <button
+                              id="btn-timer-start"
+                              onClick={handleStartTimer}
+                              className="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm shadow-indigo-500/20"
+                            >
+                              <Play className="w-3.5 h-3.5 fill-white" />
+                              {timerState === 'paused' ? 'Resume' : 'Start'}
+                            </button>
+                          ) : (
+                            /* Pause Button */
+                            <button
+                              id="btn-timer-pause"
+                              onClick={handlePauseTimer}
+                              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm shadow-amber-500/20"
+                            >
+                              <Pause className="w-3.5 h-3.5 fill-white" />
+                              Pause
+                            </button>
+                          )}
+
+                          {/* Stop / Reset Button */}
+                          <button
+                            id="btn-timer-stop"
+                            onClick={handleStopTimer}
+                            disabled={timerState === 'idle'}
+                            className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
+                          >
+                            <Square className="w-3.5 h-3.5 fill-current" />
+                            Stop
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+
                   {/* Contextual Suggestions Engine Slider */}
                   {suggestions.length > 0 && (
                     <div className="rounded-[24px] bg-blue-50 dark:bg-blue-950/20 p-4" id="smart-insights-panel">
@@ -795,27 +1588,34 @@ export default function App() {
                   )}
 
                   {/* Home Segment Switcher */}
-                  <div className="flex space-x-2 mb-8 bg-gray-100 dark:bg-slate-850 p-1 rounded-xl w-fit">
+                  <div className="flex flex-wrap gap-1 mb-8 bg-gray-100 dark:bg-slate-850 p-1 rounded-xl w-fit">
                     <button
                       id="btn-segment-today"
                       onClick={() => setHomeSegment('today')}
-                      className={`px-6 py-2 rounded-lg font-semibold text-sm transition-all ${homeSegment === 'today' ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+                      className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all cursor-pointer ${homeSegment === 'today' ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
                     >
                       Today
                     </button>
                     <button
                       id="btn-segment-upcoming"
                       onClick={() => setHomeSegment('upcoming')}
-                      className={`px-6 py-2 rounded-lg font-semibold text-sm transition-all ${homeSegment === 'upcoming' ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+                      className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all cursor-pointer ${homeSegment === 'upcoming' ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
                     >
                       Upcoming
                     </button>
                     <button
                       id="btn-segment-habits"
                       onClick={() => setHomeSegment('habits')}
-                      className={`px-6 py-2 rounded-lg font-semibold text-sm transition-all ${homeSegment === 'habits' ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+                      className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all cursor-pointer ${homeSegment === 'habits' ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
                     >
                       Habits
+                    </button>
+                    <button
+                      id="btn-segment-history"
+                      onClick={() => setHomeSegment('history')}
+                      className={`px-4 py-2 rounded-lg font-semibold text-sm transition-all cursor-pointer ${homeSegment === 'history' ? 'bg-white dark:bg-slate-900 text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 hover:bg-white/50 dark:hover:bg-slate-700/50'}`}
+                    >
+                      History
                     </button>
                   </div>
 
@@ -903,6 +1703,64 @@ export default function App() {
                                 onDuplicate={handleDuplicateHabit}
                               />
                             ))}
+                          </div>
+                        )}
+                      </>
+                    )}
+
+                    {homeSegment === 'history' && (
+                      <>
+                        <div className="flex justify-between items-center px-1">
+                          <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">Completed Daily Goals</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
+                            {dailyGoalsHistory.filter(item => item.completed && item.date !== todayStr).length} Completed
+                          </span>
+                        </div>
+
+                        {dailyGoalsHistory.filter(item => item.completed && item.date !== todayStr).length === 0 ? (
+                          <div className="rounded-[24px] border border-dashed border-gray-200 dark:border-slate-800 p-8 text-center bg-white dark:bg-slate-900">
+                            <Award className="w-8 h-8 text-slate-300 dark:text-slate-700 mx-auto mb-2" />
+                            <p className="text-xs text-slate-500 dark:text-slate-400">No completed goals recorded for previous dates yet.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 no-scrollbar">
+                            {dailyGoalsHistory
+                              .filter(item => item.completed && item.date !== todayStr)
+                              .sort((a, b) => b.date.localeCompare(a.date))
+                              .map(item => {
+                                // Format the date nicely, e.g., July 2, 2026
+                                const dateObj = new Date(item.date + 'T12:00:00');
+                                const formattedHistoryDate = dateObj.toLocaleDateString('en-US', {
+                                  month: 'short',
+                                  day: 'numeric',
+                                  year: 'numeric'
+                                });
+                                return (
+                                  <motion.div
+                                    key={item.id}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    className="rounded-[20px] bg-white dark:bg-slate-850 p-4 border border-slate-100 dark:border-slate-800/80 shadow-sm flex items-center justify-between gap-4"
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <div className="w-8 h-8 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                        <CheckCircle className="w-5 h-5 stroke-[2.5]" />
+                                      </div>
+                                      <div>
+                                        <p className="font-display font-semibold text-sm text-slate-800 dark:text-slate-200 line-through decoration-slate-400 dark:decoration-slate-500">
+                                          {item.goal}
+                                        </p>
+                                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5">
+                                          Completed on {formattedHistoryDate}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <span className="text-[10px] font-mono font-medium px-2 py-1 rounded bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 shrink-0">
+                                      {item.date}
+                                    </span>
+                                  </motion.div>
+                                );
+                              })}
                           </div>
                         )}
                       </>
@@ -1193,10 +2051,10 @@ export default function App() {
                     </div>
 
                     <h3 className="font-display font-bold text-slate-800 dark:text-white text-base">
-                      Alade Alafia
+                      {displayName || 'Alade Alafia'}
                     </h3>
                     <p className="text-xs text-slate-400 dark:text-slate-500">
-                      aladealafia123@gmail.com
+                      {userEmail || 'aladealafia123@gmail.com'}
                     </p>
 
                     <div className="grid grid-cols-2 gap-2 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
@@ -1325,7 +2183,7 @@ export default function App() {
 
                       <div className="pt-3 border-t border-slate-100 dark:border-slate-800">
                         <button
-                          onClick={handleSignOut}
+                          onClick={() => setShowSignOutConfirm(true)}
                           className="w-full py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-center flex items-center justify-center gap-1 cursor-pointer border border-slate-200 dark:border-slate-800"
                         >
                           Sign Out
@@ -1357,7 +2215,7 @@ export default function App() {
         {/* BOTTOM NAVIGATION NAVIGATION */}
         <BottomNav
           activeTab={activeTab}
-          onChangeTab={setActiveTab}
+          onChangeTab={handleTabChange}
           tasksCount={tasks.filter(t => t.dueDate === todayStr && !t.completed).length}
           habitsCount={habits.filter(h => !h.paused && !h.history[todayStr]).length}
         />
@@ -1371,6 +2229,238 @@ export default function App() {
           categories={categories}
           onCreateCategory={handleCreateCategory}
         />
+
+        {/* BOTTOM SHEET FOCUS TIMER SETTINGS */}
+        <AnimatePresence>
+          {isSettingsOpen && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                exit={{ opacity: 0 }}
+                onClick={() => {
+                  setIsSettingsOpen(false);
+                  setIsEditingPicker(false);
+                }}
+                id="timer-settings-backdrop"
+                className="fixed inset-0 bg-black z-50 pointer-events-auto"
+              />
+
+              {/* Bottom Sheet Modal Container */}
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 220 }}
+                id="timer-settings-sheet"
+                className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl z-50 pb-8 border-t border-slate-100 dark:border-slate-800"
+              >
+                {/* Header Handle */}
+                <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3" />
+
+                <div className="px-6 flex justify-between items-center mb-5">
+                  <h3 className="font-display font-bold text-lg text-slate-800 dark:text-white">
+                    Focus Settings
+                  </h3>
+                  <button
+                    id="btn-close-timer-settings"
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      setIsEditingPicker(false);
+                    }}
+                    className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 dark:text-slate-500 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="px-6 space-y-5">
+                  <div>
+                    <label className="text-xs uppercase font-extrabold tracking-wider text-slate-400 dark:text-slate-500 block mb-1">
+                      Focus Duration
+                    </label>
+                    <div className="flex justify-between items-center bg-slate-50 dark:bg-slate-850 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                      <div>
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 block">Current Duration</span>
+                        <span className="font-display font-extrabold text-slate-800 dark:text-white text-base">
+                          {focusDuration} Minutes
+                        </span>
+                      </div>
+                      
+                      {!isEditingPicker && (
+                        <button
+                          id="btn-trigger-edit-duration"
+                          onClick={() => {
+                            setPickerDuration(focusDuration);
+                            setIsEditingPicker(true);
+                          }}
+                          className="px-3.5 py-2 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-755 border border-slate-200 dark:border-slate-700 font-bold text-xs text-slate-700 dark:text-slate-200 rounded-xl cursor-pointer shadow-sm flex items-center gap-1.5 transition-colors"
+                        >
+                          ✏️ Edit Duration
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {isEditingPicker && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-slate-50 dark:bg-slate-850/60 p-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 space-y-4"
+                      id="duration-edit-form"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Choose custom duration:</span>
+                        <span className="font-mono font-extrabold text-indigo-500 dark:text-indigo-400 text-lg">
+                          {pickerDuration} mins
+                        </span>
+                      </div>
+                      
+                      {/* Range slider or native number input */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setPickerDuration(prev => Math.max(5, prev - 5))}
+                            className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 dark:hover:bg-slate-750"
+                          >
+                            -
+                          </button>
+                          
+                          <input
+                            type="range"
+                            min="5"
+                            max="120"
+                            step="1"
+                            value={pickerDuration}
+                            onChange={(e) => setPickerDuration(parseInt(e.target.value, 10))}
+                            className="flex-1 accent-indigo-500 dark:accent-indigo-400 h-2 bg-slate-200 dark:bg-slate-800 rounded-lg cursor-pointer"
+                          />
+                          
+                          <button
+                            type="button"
+                            onClick={() => setPickerDuration(prev => Math.min(120, prev + 5))}
+                            className="w-10 h-10 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold flex items-center justify-center cursor-pointer shadow-sm hover:bg-slate-50 dark:hover:bg-slate-755"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-slate-400 font-bold px-1">
+                          <span>5 Min</span>
+                          <span>60 Min</span>
+                          <span>120 Min</span>
+                        </div>
+                      </div>
+
+                      {/* Manual text picker fallback for full native inputs */}
+                      <div className="flex gap-2.5 items-center pt-2">
+                        <span className="text-xs text-slate-400 font-semibold shrink-0">Or enter:</span>
+                        <input
+                          type="number"
+                          min="5"
+                          max="120"
+                          value={pickerDuration}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value, 10);
+                            if (!isNaN(val)) {
+                              setPickerDuration(Math.min(120, Math.max(5, val)));
+                            }
+                          }}
+                          className="w-20 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-xs rounded-lg font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <span className="text-xs text-slate-400 font-semibold">minutes</span>
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          id="btn-save-duration"
+                          onClick={() => {
+                            setFocusDuration(pickerDuration);
+                            localStorage.setItem('aura_focus_duration', pickerDuration.toString());
+                            if (timerState === 'idle' || timerState === 'completed') {
+                              setTimeLeft(pickerDuration * 60);
+                            }
+                            setIsEditingPicker(false);
+                            setIsSettingsOpen(false);
+                          }}
+                          className="flex-1 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm shadow-indigo-500/15"
+                        >
+                          Save
+                        </button>
+                        <button
+                          id="btn-cancel-edit-duration"
+                          onClick={() => setIsEditingPicker(false)}
+                          className="px-4 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer hover:bg-slate-300 dark:hover:bg-slate-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
+        {/* SIGN OUT CONFIRMATION MODAL */}
+        <AnimatePresence>
+          {showSignOutConfirm && (
+            <>
+              {/* Backdrop */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.5 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowSignOutConfirm(false)}
+                className="fixed inset-0 bg-black/40 dark:bg-black/60 z-50 pointer-events-auto backdrop-blur-sm"
+                id="signout-confirm-backdrop"
+              />
+
+              {/* Centered Modal Container */}
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                transition={{ duration: 0.2 }}
+                className="fixed inset-0 m-auto w-[90%] max-w-sm h-fit bg-white dark:bg-slate-900 rounded-3xl p-6 shadow-2xl z-50 border border-slate-100 dark:border-slate-800 text-center"
+                id="signout-confirm-dialog"
+              >
+                <div className="w-12 h-12 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <AlertCircle className="w-6 h-6 stroke-[2.2]" />
+                </div>
+                
+                <h3 className="font-display font-bold text-lg text-slate-900 dark:text-white mb-2">
+                  Sign Out
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+                  Are you sure you want to sign out of GoalMi?
+                </p>
+
+                <div className="flex gap-3">
+                  <button
+                    id="btn-confirm-signout-cancel"
+                    onClick={() => setShowSignOutConfirm(false)}
+                    className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-2xl cursor-pointer transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="btn-confirm-signout-ok"
+                    onClick={async () => {
+                      setShowSignOutConfirm(false);
+                      await handleSignOut();
+                    }}
+                    className="flex-1 py-3 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-2xl cursor-pointer shadow-sm shadow-rose-500/15 transition-colors"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
       </main>
     </div>

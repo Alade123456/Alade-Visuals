@@ -320,7 +320,11 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   startOfWeek: 'Monday',
   timeFormat: '12h',
   defaultHomeMode: 'Productivity',
-  themeColor: 'blue'
+  themeColor: 'blue',
+  dailyGoal: '',
+  dailyGoalDate: '',
+  dailyGoalCompleted: false,
+  dailyGoalCompletedDate: ''
 };
 
 // Generate helpful smart notifications / suggestions based on tasks & habits state

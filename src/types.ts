@@ -56,6 +56,14 @@ export interface Achievement {
   requirementType: 'first_task' | 'first_habit' | 'streak_7' | 'streak_30' | 'tasks_100' | 'champion' | 'early_bird' | 'consistency';
 }
 
+export interface DailyGoalHistoryItem {
+  id: string;
+  goal: string;
+  date: string; // YYYY-MM-DD
+  completed: boolean;
+  completedDate?: string;
+}
+
 export interface UserPreferences {
   darkMode: boolean;
   notificationReminders: boolean;
@@ -64,6 +72,11 @@ export interface UserPreferences {
   timeFormat: '12h' | '24h';
   defaultHomeMode: 'Productivity' | 'Habits';
   themeColor: 'blue' | 'indigo' | 'violet' | 'emerald' | 'amber' | 'rose' | 'slate';
+  dailyGoal?: string;
+  dailyGoalDate?: string;
+  dailyGoalCompleted?: boolean;
+  dailyGoalCompletedDate?: string;
+  dailyGoalsHistory?: DailyGoalHistoryItem[];
 }
 
 export interface SmartSuggestion {
