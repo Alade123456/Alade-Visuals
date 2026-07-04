@@ -93,35 +93,47 @@ async function startServer() {
 
       // A. Preferences
       if (pushPreferences) {
+        const darkModeVal = pushPreferences.dark_mode !== undefined ? !!pushPreferences.dark_mode : !!pushPreferences.darkMode;
+        const notifRemindersVal = pushPreferences.notification_reminders !== undefined ? !!pushPreferences.notification_reminders : !!pushPreferences.notificationReminders;
+        const reminderTimesVal = pushPreferences.reminder_times || pushPreferences.reminderTimes || '09:00';
+        const startOfWeekVal = pushPreferences.start_of_week || pushPreferences.startOfWeek || 'Monday';
+        const timeFormatVal = pushPreferences.time_format || pushPreferences.timeFormat || '12h';
+        const defaultHomeModeVal = pushPreferences.default_home_mode || pushPreferences.defaultHomeMode || 'Productivity';
+        const themeColorVal = pushPreferences.theme_color || pushPreferences.themeColor || 'indigo';
+        const dailyGoalVal = pushPreferences.daily_goal || pushPreferences.dailyGoal || null;
+        const dailyGoalDateVal = pushPreferences.daily_goal_date || pushPreferences.dailyGoalDate || null;
+        const dailyGoalCompletedVal = pushPreferences.daily_goal_completed !== undefined ? !!pushPreferences.daily_goal_completed : !!pushPreferences.dailyGoalCompleted;
+        const dailyGoalCompletedDateVal = pushPreferences.daily_goal_completed_date || pushPreferences.dailyGoalCompletedDate || null;
+
         await db.insert(preferences)
           .values({
             userId: uid,
-            darkMode: !!pushPreferences.darkMode,
-            notificationReminders: !!pushPreferences.notificationReminders,
-            reminderTimes: pushPreferences.reminderTimes || '09:00',
-            startOfWeek: pushPreferences.startOfWeek || 'Monday',
-            timeFormat: pushPreferences.timeFormat || '12h',
-            defaultHomeMode: pushPreferences.defaultHomeMode || 'Productivity',
-            themeColor: pushPreferences.themeColor || 'indigo',
-            dailyGoal: pushPreferences.dailyGoal || null,
-            dailyGoalDate: pushPreferences.dailyGoalDate || null,
-            dailyGoalCompleted: !!pushPreferences.dailyGoalCompleted,
-            dailyGoalCompletedDate: pushPreferences.dailyGoalCompletedDate || null,
+            darkMode: darkModeVal,
+            notificationReminders: notifRemindersVal,
+            reminderTimes: reminderTimesVal,
+            startOfWeek: startOfWeekVal,
+            timeFormat: timeFormatVal,
+            defaultHomeMode: defaultHomeModeVal,
+            themeColor: themeColorVal,
+            dailyGoal: dailyGoalVal,
+            dailyGoalDate: dailyGoalDateVal,
+            dailyGoalCompleted: dailyGoalCompletedVal,
+            dailyGoalCompletedDate: dailyGoalCompletedDateVal,
           })
           .onConflictDoUpdate({
             target: preferences.userId,
             set: {
-              darkMode: !!pushPreferences.darkMode,
-              notificationReminders: !!pushPreferences.notificationReminders,
-              reminderTimes: pushPreferences.reminderTimes || '09:00',
-              startOfWeek: pushPreferences.startOfWeek || 'Monday',
-              timeFormat: pushPreferences.timeFormat || '12h',
-              defaultHomeMode: pushPreferences.defaultHomeMode || 'Productivity',
-              themeColor: pushPreferences.themeColor || 'indigo',
-              dailyGoal: pushPreferences.dailyGoal || null,
-              dailyGoalDate: pushPreferences.dailyGoalDate || null,
-              dailyGoalCompleted: !!pushPreferences.dailyGoalCompleted,
-              dailyGoalCompletedDate: pushPreferences.dailyGoalCompletedDate || null,
+              darkMode: darkModeVal,
+              notificationReminders: notifRemindersVal,
+              reminderTimes: reminderTimesVal,
+              startOfWeek: startOfWeekVal,
+              timeFormat: timeFormatVal,
+              defaultHomeMode: defaultHomeModeVal,
+              themeColor: themeColorVal,
+              dailyGoal: dailyGoalVal,
+              dailyGoalDate: dailyGoalDateVal,
+              dailyGoalCompleted: dailyGoalCompletedVal,
+              dailyGoalCompletedDate: dailyGoalCompletedDateVal,
             },
           });
       }
@@ -136,6 +148,13 @@ async function startServer() {
         }
 
         for (const task of pushTasks) {
+          const taskDueDate = task.due_date || task.dueDate || '';
+          const taskDueTime = task.due_time || task.dueTime || '';
+          const taskColorLabel = task.color_label || task.colorLabel || '';
+          const taskCompletedAt = task.completed_at || task.completedAt || null;
+          const taskOrderNum = task.order_num !== undefined ? task.order_num : (task.orderNum !== undefined ? task.orderNum : (task.order !== undefined ? task.order : 0));
+          const parsedSubtasks = typeof task.subtasks === 'string' ? JSON.parse(task.subtasks) : task.subtasks || [];
+
           await db.insert(tasks)
             .values({
               id: task.id,
@@ -144,18 +163,18 @@ async function startServer() {
               description: task.description || '',
               category: task.category || '',
               priority: task.priority || 'Medium',
-              dueDate: task.dueDate || '',
-              dueTime: task.dueTime || '',
+              dueDate: taskDueDate,
+              dueTime: taskDueTime,
               reminder: !!task.reminder,
               repeat: task.repeat || 'None',
-              colorLabel: task.colorLabel || '',
+              colorLabel: taskColorLabel,
               duration: task.duration || 0,
-              subtasks: task.subtasks || [],
+              subtasks: parsedSubtasks,
               notes: task.notes || '',
               completed: !!task.completed,
-              completedAt: task.completedAt || null,
+              completedAt: taskCompletedAt,
               pinned: !!task.pinned,
-              orderNum: task.orderNum || task.order || 0,
+              orderNum: taskOrderNum,
             })
             .onConflictDoUpdate({
               target: tasks.id,
@@ -164,18 +183,18 @@ async function startServer() {
                 description: task.description || '',
                 category: task.category || '',
                 priority: task.priority || 'Medium',
-                dueDate: task.dueDate || '',
-                dueTime: task.dueTime || '',
+                dueDate: taskDueDate,
+                dueTime: taskDueTime,
                 reminder: !!task.reminder,
                 repeat: task.repeat || 'None',
-                colorLabel: task.colorLabel || '',
+                colorLabel: taskColorLabel,
                 duration: task.duration || 0,
-                subtasks: task.subtasks || [],
+                subtasks: parsedSubtasks,
                 notes: task.notes || '',
                 completed: !!task.completed,
-                completedAt: task.completedAt || null,
+                completedAt: taskCompletedAt,
                 pinned: !!task.pinned,
-                orderNum: task.orderNum || task.order || 0,
+                orderNum: taskOrderNum,
               },
             });
         }
@@ -191,6 +210,11 @@ async function startServer() {
         }
 
         for (const habit of pushHabits) {
+          const habitBestStreak = habit.best_streak !== undefined ? habit.best_streak : (habit.bestStreak !== undefined ? habit.bestStreak : 0);
+          const habitColorLabel = habit.color_label || habit.colorLabel || '';
+          const habitCreatedAt = habit.created_at || habit.createdAt || new Date().toISOString();
+          const parsedHistory = typeof habit.history === 'string' ? JSON.parse(habit.history) : habit.history || {};
+
           await db.insert(habits)
             .values({
               id: habit.id,
@@ -198,11 +222,11 @@ async function startServer() {
               name: habit.name,
               frequency: habit.frequency || 'Daily',
               streak: habit.streak || 0,
-              bestStreak: habit.bestStreak || 0,
-              history: habit.history || {},
+              bestStreak: habitBestStreak,
+              history: parsedHistory,
               paused: !!habit.paused,
-              colorLabel: habit.colorLabel || '',
-              createdAt: habit.createdAt || new Date().toISOString(),
+              colorLabel: habitColorLabel,
+              createdAt: habitCreatedAt,
             })
             .onConflictDoUpdate({
               target: habits.id,
@@ -210,10 +234,10 @@ async function startServer() {
                 name: habit.name,
                 frequency: habit.frequency || 'Daily',
                 streak: habit.streak || 0,
-                bestStreak: habit.bestStreak || 0,
-                history: habit.history || {},
+                bestStreak: habitBestStreak,
+                history: parsedHistory,
                 paused: !!habit.paused,
-                colorLabel: habit.colorLabel || '',
+                colorLabel: habitColorLabel,
               },
             });
         }
@@ -230,6 +254,7 @@ async function startServer() {
         }
 
         for (const cat of customCategories) {
+          const catIsCustom = cat.is_custom !== undefined ? !!cat.is_custom : (cat.isCustom !== undefined ? !!cat.isCustom : true);
           await db.insert(categories)
             .values({
               id: cat.id,
@@ -237,7 +262,7 @@ async function startServer() {
               name: cat.name,
               color: cat.color || 'bg-blue-500',
               icon: cat.icon || 'CheckCircle',
-              isCustom: true,
+              isCustom: catIsCustom,
             })
             .onConflictDoUpdate({
               target: categories.id,
@@ -245,6 +270,7 @@ async function startServer() {
                 name: cat.name,
                 color: cat.color || 'bg-blue-500',
                 icon: cat.icon || 'CheckCircle',
+                isCustom: catIsCustom,
               },
             });
         }
@@ -253,23 +279,27 @@ async function startServer() {
       // E. Achievements
       if (Array.isArray(pushAchievements)) {
         for (const ach of pushAchievements) {
+          const achIconName = ach.icon_name || ach.iconName || 'Award';
+          const achUnlockedAt = ach.unlocked_at || ach.unlockedAt || null;
+          const achRequirementType = ach.requirement_type || ach.requirementType;
+
           await db.insert(achievements)
             .values({
               id: ach.id,
               userId: uid,
               title: ach.title,
               description: ach.description || '',
-              iconName: ach.iconName || 'Award',
-              unlockedAt: ach.unlockedAt || null,
-              requirementType: ach.requirementType,
+              iconName: achIconName,
+              unlockedAt: achUnlockedAt,
+              requirementType: achRequirementType,
             })
             .onConflictDoUpdate({
               target: [achievements.id, achievements.userId],
               set: {
                 title: ach.title,
                 description: ach.description || '',
-                iconName: ach.iconName || 'Award',
-                unlockedAt: ach.unlockedAt || null,
+                iconName: achIconName,
+                unlockedAt: achUnlockedAt,
               },
             });
         }

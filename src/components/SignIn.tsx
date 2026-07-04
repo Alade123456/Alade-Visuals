@@ -254,7 +254,19 @@ export default function SignIn({ onSignIn }: SignInProps) {
             {error && (
               <div className="p-3.5 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 rounded-2xl border border-red-100 dark:border-red-500/20 space-y-2 text-left">
                 <p className="font-medium">{error}</p>
-
+                {error.includes('operation-not-allowed') && (
+                  <div className="mt-2 pt-2 border-t border-red-200/30 dark:border-red-500/10 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    <p className="font-bold text-slate-800 dark:text-slate-200 mb-1">🛠️ How to fix this in your Firebase Console:</p>
+                    <ol className="list-decimal pl-4 space-y-1 text-[11px]">
+                      <li>Go to your <a href="https://console.firebase.google.com" target="_blank" rel="noopener noreferrer" className="underline text-blue-500 font-bold">Firebase Console</a>.</li>
+                      <li>In the left sidebar, click on <strong className="text-slate-700 dark:text-slate-300">Authentication</strong>.</li>
+                      <li>Go to the <strong className="text-slate-700 dark:text-slate-300">Sign-in method</strong> tab.</li>
+                      <li>Click <strong className="text-slate-700 dark:text-slate-300">Add new provider</strong> (or edit the existing list).</li>
+                      <li>Select <strong className="text-slate-700 dark:text-slate-300">Email/Password</strong>.</li>
+                      <li>Toggle <strong className="text-slate-700 dark:text-slate-300">Enable</strong> (both Email/Password and passwordless options can be configured, but standard email/password is required) and click <strong className="text-slate-700 dark:text-slate-300">Save</strong>.</li>
+                    </ol>
+                  </div>
+                )}
               </div>
             )}
 

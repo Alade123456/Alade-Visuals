@@ -5,7 +5,7 @@ import {
   Download, Moon, Sun, Bell, BookOpen, Info, 
   Settings, Award, Flame, CheckCircle, Clock, Pin,
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
-  Play, Pause, Square, X
+  Play, Pause, Square, X, Zap
 } from 'lucide-react';
 import { 
   supabase, 
@@ -119,22 +119,30 @@ export default function App() {
       try {
         const data = await syncPullAll(userId);
         if (data) {
-          if (data.tasks && data.tasks.length > 0) setTasks(data.tasks);
-          if (data.habits && data.habits.length > 0) setHabits(data.habits);
-          if (data.categories && data.categories.length > 0) setCategories(data.categories);
-          if (data.achievements && data.achievements.length > 0) setAchievements(data.achievements);
-          if (data.preferences) setPreferences(data.preferences);
-
-          // If user has zero cloud data, sync our current local data to seed Supabase
+          // If the user has zero cloud data (i.e. brand new user signing in),
+          // we start with a fresh clean state with zero statistics, instead of seeding from offline mock tasks.
           const hasNoCloudData = (!data.tasks || data.tasks.length === 0) && (!data.habits || data.habits.length === 0);
           if (hasNoCloudData) {
+            setTasks([]);
+            setHabits([]);
+            setCategories(DEFAULT_CATEGORIES);
+            setAchievements(INITIAL_ACHIEVEMENTS.map(a => ({ ...a, unlockedAt: undefined })));
+            setPreferences(DEFAULT_PREFERENCES);
+            
             await syncPushAll(userId, {
-              tasks,
-              habits,
-              categories,
-              achievements,
-              preferences
+              tasks: [],
+              habits: [],
+              categories: DEFAULT_CATEGORIES,
+              achievements: INITIAL_ACHIEVEMENTS.map(a => ({ ...a, unlockedAt: undefined })),
+              preferences: DEFAULT_PREFERENCES
             });
+          } else {
+            // Otherwise, load whatever exists in the database
+            setTasks(data.tasks || []);
+            setHabits(data.habits || []);
+            setCategories(data.categories && data.categories.length > 0 ? data.categories : DEFAULT_CATEGORIES);
+            setAchievements(data.achievements && data.achievements.length > 0 ? data.achievements : INITIAL_ACHIEVEMENTS.map(a => ({ ...a, unlockedAt: undefined })));
+            if (data.preferences) setPreferences(data.preferences);
           }
         }
       } catch (err) {
@@ -278,6 +286,10 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<string>(() => localStorage.getItem('aura_selected_category') || 'All');
   const [selectedPriority, setSelectedPriority] = useState<string>(() => localStorage.getItem('aura_selected_priority') || 'All');
   const [sortBy, setSortBy] = useState<'time' | 'priority' | 'name'>(() => (localStorage.getItem('aura_sort_by') as any) || 'time');
+
+  // Quick-Capture states
+  const [quickTaskName, setQuickTaskName] = useState('');
+  const [quickTaskPriority, setQuickTaskPriority] = useState<Priority>('Medium');
 
   // Segmented Control (for Home screen)
   const [homeSegment, setHomeSegment] = useState<'today' | 'upcoming' | 'habits' | 'history'>('today');
@@ -768,6 +780,37 @@ export default function App() {
       };
       setTasks(prev => [newTask, ...prev]);
     }
+  };
+
+  const handleQuickAddTask = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!quickTaskName.trim()) return;
+
+    const todayStr = formatDate(new Date());
+    const defaultCategory = categories[0]?.name || 'Personal';
+
+    const newTask: Task = {
+      id: `task-${Date.now()}`,
+      name: quickTaskName.trim(),
+      description: '',
+      category: defaultCategory,
+      priority: quickTaskPriority,
+      dueDate: todayStr,
+      dueTime: '12:00',
+      reminder: false,
+      repeat: 'None',
+      colorLabel: quickTaskPriority === 'Urgent' ? '#ef4444' : quickTaskPriority === 'High' ? '#f97316' : quickTaskPriority === 'Medium' ? '#3b82f6' : '#64748b',
+      duration: 30,
+      subtasks: [],
+      notes: '',
+      completed: false,
+      pinned: false,
+      order: tasks.length + 1
+    };
+
+    setTasks(prev => [newTask, ...prev]);
+    setQuickTaskName('');
+    setQuickTaskPriority('Medium');
   };
 
   const handleToggleSubtask = (taskId: string, subtaskId: string) => {
@@ -1779,6 +1822,63 @@ export default function App() {
                       <p className="text-xs text-slate-500 dark:text-slate-400">Organize, sort, and execute milestones</p>
                     </div>
                   </div>
+
+                  {/* Quick-Capture Input Field */}
+                  <form onSubmit={handleQuickAddTask} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/30 dark:from-slate-900 dark:via-slate-900 dark:to-slate-850 p-3.5 rounded-3xl border border-blue-100/70 dark:border-slate-800 shadow-sm" id="quick-capture-form">
+                    <div className="flex-1 flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                        <Zap className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="input-quick-task"
+                        type="text"
+                        placeholder="Quick-Capture: Type task title and press Enter..."
+                        value={quickTaskName}
+                        onChange={(e) => setQuickTaskName(e.target.value)}
+                        className="w-full bg-transparent border-none text-xs font-medium text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none"
+                      />
+                    </div>
+                    
+                    {/* Inline Priority Selector */}
+                    <div className="flex items-center gap-1.5 justify-between sm:justify-end border-t sm:border-t-0 border-slate-100 dark:border-slate-800 pt-2 sm:pt-0 shrink-0">
+                      <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mr-1">
+                        Priority:
+                      </span>
+                      <div className="flex gap-1" id="quick-priority-picker">
+                        {(['Low', 'Medium', 'High', 'Urgent'] as Priority[]).map((p) => {
+                          const isSelected = quickTaskPriority === p;
+                          const colors = {
+                            Low: isSelected ? 'bg-slate-500 text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800',
+                            Medium: isSelected ? 'bg-blue-500 text-white shadow-sm' : 'text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950/30',
+                            High: isSelected ? 'bg-orange-500 text-white shadow-sm' : 'text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30',
+                            Urgent: isSelected ? 'bg-rose-500 text-white shadow-sm' : 'text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/30',
+                          };
+                          return (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setQuickTaskPriority(p)}
+                              className={`px-2.5 py-1 text-[10px] font-bold rounded-lg transition-all duration-200 cursor-pointer ${colors[p]}`}
+                            >
+                              {p}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={!quickTaskName.trim()}
+                        className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                          quickTaskName.trim()
+                            ? 'bg-blue-500 text-white shadow-sm shadow-blue-500/20 hover:bg-blue-600'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                        }`}
+                      >
+                        <Plus className="w-4 h-4 stroke-[2.5]" />
+                      </button>
+                    </div>
+                  </form>
 
                   {/* Search, Filter & Sort Controls Grid */}
                   <div className="space-y-3 bg-white dark:bg-slate-900 p-4 rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm">
