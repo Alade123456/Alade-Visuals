@@ -7,8 +7,6 @@ import {
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
   Play, Pause, Square, X
 } from 'lucide-react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth } from './firebase';
 import { 
   supabase, 
   isSupabaseConfigured, 
@@ -53,7 +51,6 @@ export default function App() {
   const tabScrollPositions = useRef<{ [key in TabId]?: number }>({});
 
   useEffect(() => {
-    let unsubscribeFirebase: (() => void) | undefined;
     let unsubscribeSupabase: (() => void) | undefined;
 
     if (isSupabaseConfigured) {
@@ -90,25 +87,26 @@ export default function App() {
 
       unsubscribeSupabase = () => subscription.unsubscribe();
     } else {
-      // 2. Firebase Auth Listener Fallback
-      unsubscribeFirebase = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          setIsAuthenticated(true);
-          setUserId(user.uid);
-          setUserEmail(user.email || null);
-          localStorage.setItem('aura_auth', 'true');
-        } else {
-          setIsAuthenticated(false);
-          setUserId(null);
-          setUserEmail(null);
-          localStorage.removeItem('aura_auth');
-        }
+      // 2. Local Storage Auth Fallback
+      const isLocalAuth = localStorage.getItem('aura_auth') === 'true';
+      if (isLocalAuth) {
+        setIsAuthenticated(true);
+        setUserId(localStorage.getItem('aura_local_uid') || 'local-user');
+        setUserEmail(localStorage.getItem('aura_local_email') || 'aladealafia123@gmail.com');
+        setDisplayName(localStorage.getItem('aura_local_username') || 'Alade');
+      } else {
+        setIsAuthenticated(false);
+        setUserId(null);
+        setUserEmail(null);
+      }
+      
+      const timer = setTimeout(() => {
         setAuthLoading(false);
-      });
+      }, 800);
+      return () => clearTimeout(timer);
     }
 
     return () => {
-      if (unsubscribeFirebase) unsubscribeFirebase();
       if (unsubscribeSupabase) unsubscribeSupabase();
     };
   }, []);
@@ -428,14 +426,9 @@ export default function App() {
         }
       });
     } else {
-      const unsubscribe = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          const rawName = user.displayName || user.email?.split('@')[0] || 'Alade';
-          const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
-          setDisplayName(formattedName);
-        }
-      });
-      return unsubscribe;
+      const rawName = localStorage.getItem('aura_local_username') || 'Alade';
+      const formattedName = rawName.charAt(0).toUpperCase() + rawName.slice(1);
+      setDisplayName(formattedName);
     }
   }, [userId]);
 
@@ -1036,8 +1029,6 @@ export default function App() {
   const handleSignOut = async () => {
     if (isSupabaseConfigured) {
       await supabase.auth.signOut();
-    } else {
-      await signOut(auth);
     }
     setIsAuthenticated(false);
     setUserId(null);

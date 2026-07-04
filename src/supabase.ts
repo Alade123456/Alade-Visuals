@@ -1,18 +1,106 @@
 import { createClient } from '@supabase/supabase-js';
 import { Task, Habit, Category, Achievement, UserPreferences } from './types';
 
+// Strip quotes and trim whitespace from environment variables safely
+const cleanEnvValue = (val: string) => {
+  if (!val) return '';
+  let cleaned = val.trim();
+  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
+    cleaned = cleaned.substring(1, cleaned.length - 1);
+  }
+  return cleaned.trim();
+};
+
 // Read configuration from Vite environment variables safely
 const metaEnv = (import.meta as any).env || {};
-const supabaseUrl = metaEnv.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = metaEnv.VITE_SUPABASE_ANON_KEY || '';
+const rawSupabaseUrl = metaEnv.VITE_SUPABASE_URL || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : '') || '';
+const rawSupabaseAnonKey = metaEnv.VITE_SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : '') || '';
 
-export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
+export const supabaseUrl = cleanEnvValue(rawSupabaseUrl);
+export const supabaseAnonKey = cleanEnvValue(rawSupabaseAnonKey);
+
+const isPlaceholder = (url: string, key: string) => {
+  return !url || !key || url.includes('placeholder-project') || key.includes('placeholder-key') || url.includes('YOUR_SUPABASE_URL');
+};
+
+export const hasSupabaseEnv = !isPlaceholder(supabaseUrl, supabaseAnonKey);
+export const isSupabaseConfigured = hasSupabaseEnv && localStorage.getItem('aura_use_local_storage_mode') !== 'true';
 
 // Use a fallback to prevent runtime crashes if variables are missing
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder-project.supabase.co',
   supabaseAnonKey || 'placeholder-key'
 );
+
+export function diagnoseSupabaseConfig(): { isValid: boolean; errors: string[]; warnings: string[]; maskedUrl: string; maskedKey: string } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const maskUrl = (url: string) => {
+    if (!url) return 'Not configured';
+    try {
+      if (url.includes('@')) {
+        const parts = url.split('@');
+        const protocolPart = parts[0].split('://');
+        const protocol = protocolPart[0];
+        const host = parts[1];
+        return `${protocol}://[username]:[password]@${host}`;
+      }
+      if (url.startsWith('http')) {
+        const parsed = new URL(url);
+        const hostParts = parsed.hostname.split('.');
+        if (hostParts[0].length > 4) {
+          hostParts[0] = hostParts[0].substring(0, 3) + '***';
+        } else {
+          hostParts[0] = '***';
+        }
+        return `${parsed.protocol}//${hostParts.join('.')}`;
+      }
+      return url.substring(0, Math.min(10, url.length)) + '...';
+    } catch (e) {
+      return url.substring(0, Math.min(10, url.length)) + '...';
+    }
+  };
+
+  const maskKey = (key: string) => {
+    if (!key) return 'Not configured';
+    if (key.length > 15) {
+      return `${key.substring(0, 6)}...${key.substring(key.length - 6)}`;
+    }
+    return '***';
+  };
+
+  const maskedUrl = maskUrl(rawSupabaseUrl);
+  const maskedKey = maskKey(rawSupabaseAnonKey);
+
+  if (!rawSupabaseUrl) {
+    errors.push("VITE_SUPABASE_URL is empty or not configured. Set it in the Secrets panel in AI Studio.");
+  } else {
+    const url = supabaseUrl;
+    if (url.startsWith('postgres://') || url.startsWith('postgresql://') || url.includes('5432')) {
+      errors.push("VITE_SUPABASE_URL appears to be a PostgreSQL database connection string. You must use the HTTP API URL (e.g. 'https://xxxx.supabase.co') instead of the database connection string.");
+    } else if (!url.startsWith('https://') && !url.startsWith('http://')) {
+      errors.push("VITE_SUPABASE_URL must start with 'https://' (e.g. 'https://xxxx.supabase.co'). Make sure you didn't miss the protocol prefix.");
+    }
+  }
+
+  if (!rawSupabaseAnonKey) {
+    errors.push("VITE_SUPABASE_ANON_KEY is empty or not configured. Set it in the Secrets panel in AI Studio.");
+  } else {
+    const key = supabaseAnonKey;
+    if (key.length < 20) {
+      errors.push("VITE_SUPABASE_ANON_KEY is too short. Ensure you copied the 'anon' 'public' key (a long JSON Web Token), not the database password or project reference.");
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings,
+    maskedUrl,
+    maskedKey
+  };
+}
 
 /*
 =========================================
@@ -88,7 +176,11 @@ CREATE TABLE public.preferences (
   start_of_week TEXT,
   time_format TEXT,
   default_home_mode TEXT,
-  theme_color TEXT
+  theme_color TEXT,
+  daily_goal TEXT,
+  daily_goal_date TEXT,
+  daily_goal_completed BOOLEAN,
+  daily_goal_completed_date TEXT
 );
 
 -- Enable RLS
