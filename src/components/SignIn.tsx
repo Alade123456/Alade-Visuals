@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { LogIn, Mail, Lock, ArrowRight, User, Database, AlertCircle, Check, Copy } from 'lucide-react';
-import { supabase, isSupabaseConfigured, hasSupabaseEnv, diagnoseSupabaseConfig } from '../supabase';
+import { supabase, isSupabaseConfigured, hasSupabaseEnv, diagnoseSupabaseConfig, supabaseAnonKey } from '../supabase';
 
 interface SignInProps {
   onSignIn: () => void;
@@ -119,7 +119,12 @@ export default function SignIn({ onSignIn }: SignInProps) {
         });
         if (oAuthErr) throw oAuthErr;
         if (data?.url) {
-          const authWindow = window.open(data.url, 'supabase_oauth', 'width=600,height=700');
+          // Append the apikey parameter because window.open makes a standard browser GET request which doesn't include custom headers.
+          // Without this, Supabase returns: {"message":"No API key found in request","hint":"No `apikey` request header or url param was found."}
+          const oauthUrl = new URL(data.url);
+          oauthUrl.searchParams.set('apikey', supabaseAnonKey);
+          
+          const authWindow = window.open(oauthUrl.toString(), 'supabase_oauth', 'width=600,height=700');
           if (!authWindow) {
             setError("Popup blocked. Please allow popups for this site to sign in with Google.");
           }
@@ -197,29 +202,7 @@ export default function SignIn({ onSignIn }: SignInProps) {
           <p className="text-slate-500 dark:text-slate-400">
             {isRegistering ? "Create your account to start" : "Welcome back, log in to continue"}
           </p>
-          <div className="mt-4 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200/50 dark:border-slate-700/50">
-            <span className={`w-2 h-2 rounded-full ${isSupabaseConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-blue-500'}`} />
-            <span>{isSupabaseConfigured ? 'Supabase Backend Connected' : 'Offline Local Storage Mode'}</span>
-          </div>
 
-          {hasSupabaseEnv && (
-            <div className="mt-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  if (isSupabaseConfigured) {
-                    localStorage.setItem('aura_use_local_storage_mode', 'true');
-                  } else {
-                    localStorage.removeItem('aura_use_local_storage_mode');
-                  }
-                  window.location.reload();
-                }}
-                className="text-xs text-blue-500 hover:text-blue-600 font-medium underline cursor-pointer transition-colors"
-              >
-                {isSupabaseConfigured ? "Switch to Offline Local Mode" : "Switch to Supabase Cloud Mode"}
-              </button>
-            </div>
-          )}
         </div>
 
         <div className="bg-white dark:bg-slate-800 rounded-3xl p-8 shadow-sm border border-slate-100 dark:border-slate-700/50">
@@ -271,23 +254,7 @@ export default function SignIn({ onSignIn }: SignInProps) {
             {error && (
               <div className="p-3.5 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 rounded-2xl border border-red-100 dark:border-red-500/20 space-y-2 text-left">
                 <p className="font-medium">{error}</p>
-                {(error.toLowerCase().includes('fetch') || error.toLowerCase().includes('network') || error.toLowerCase().includes('typeerror')) && (
-                  <div className="pt-2 border-t border-red-200/50 dark:border-red-500/20">
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-2 leading-relaxed">
-                      Tip: If the database is unreachable, you can bypass the cloud connection and run the app fully offline in local storage mode.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        localStorage.setItem('aura_use_local_storage_mode', 'true');
-                        window.location.reload();
-                      }}
-                      className="w-full py-2 px-3 bg-red-500 hover:bg-red-600 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer text-center block shadow-sm shadow-red-500/10"
-                    >
-                      Enable Offline Local Mode
-                    </button>
-                  </div>
-                )}
+
               </div>
             )}
 
@@ -381,202 +348,6 @@ export default function SignIn({ onSignIn }: SignInProps) {
               </button>
             </p>
           </div>
-        </div>
-
-        {/* Supabase Connection Helper & Diagnostic Panel */}
-        <div className="mt-6 bg-white dark:bg-slate-800 rounded-3xl p-6 shadow-sm border border-slate-100 dark:border-slate-700/50">
-          <button
-            type="button"
-            onClick={() => setShowDiagnostics(!showDiagnostics)}
-            className="w-full flex items-center justify-between text-slate-700 dark:text-slate-300 hover:text-blue-500 font-semibold text-sm transition-colors cursor-pointer"
-          >
-            <div className="flex items-center gap-2">
-              <Database size={18} className="text-blue-500" />
-              <span>Supabase Connection Helper</span>
-            </div>
-            <span className="text-xs text-slate-400 dark:text-slate-500">
-              {showDiagnostics ? 'Hide Guide' : 'Show Guide'}
-            </span>
-          </button>
-
-          {showDiagnostics && (
-            <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/50 space-y-4 text-xs text-left text-slate-600 dark:text-slate-300">
-              <div>
-                <p className="font-semibold mb-2 text-slate-900 dark:text-white">1. Current Config Check</p>
-                <div className="space-y-1.5 font-mono text-[11px] bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
-                  <div className="flex justify-between items-center gap-2">
-                    <span>URL:</span>
-                    <span className={diagnoseSupabaseConfig().errors.some(e => e.includes('URL')) ? 'text-red-500 text-right overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px]' : 'text-emerald-500 text-right overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px]'}>
-                      {diagnoseSupabaseConfig().maskedUrl}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center gap-2">
-                    <span>Anon Key:</span>
-                    <span className={diagnoseSupabaseConfig().errors.some(e => e.includes('Key')) ? 'text-red-500 text-right overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px]' : 'text-emerald-500 text-right overflow-hidden text-ellipsis whitespace-nowrap max-w-[250px]'}>
-                      {diagnoseSupabaseConfig().maskedKey}
-                    </span>
-                  </div>
-                  <div className="flex justify-between items-center pt-1.5 border-t border-slate-200/50 dark:border-slate-800/50">
-                    <span>Status:</span>
-                    <span>
-                      {diagnoseSupabaseConfig().isValid ? (
-                        <span className="text-emerald-500 font-bold">Passed Format Check</span>
-                      ) : (
-                        <span className="text-red-500 font-bold">Invalid Format Detected</span>
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {diagnoseSupabaseConfig().errors.length > 0 && (
-                <div className="p-3 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-2xl text-red-700 dark:text-red-400 space-y-1.5">
-                  <div className="flex items-center gap-1.5 font-bold">
-                    <AlertCircle size={14} />
-                    <span>Configuration Corrections Needed:</span>
-                  </div>
-                  <ul className="list-disc pl-4 space-y-1 leading-relaxed">
-                    {diagnoseSupabaseConfig().errors.map((err, idx) => (
-                      <li key={idx}>{err}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              <div>
-                <p className="font-semibold mb-1.5 text-slate-900 dark:text-white">2. Where to get the correct values?</p>
-                <p className="leading-relaxed mb-2 text-slate-500 dark:text-slate-400">
-                  Go to your <strong className="text-slate-700 dark:text-slate-200">Supabase Dashboard</strong> &rarr; <strong className="text-slate-700 dark:text-slate-200">Project Settings</strong> (gear icon) &rarr; <strong className="text-slate-700 dark:text-slate-200">API</strong>:
-                </p>
-                <ul className="list-decimal pl-4 space-y-1.5 text-slate-500 dark:text-slate-400 leading-relaxed">
-                  <li>
-                    Copy the <strong className="text-slate-700 dark:text-slate-200">Project URL</strong> under "Project API keys" and set it as <code className="bg-slate-100 dark:bg-slate-900 px-1 py-0.5 rounded font-mono text-[10px] text-slate-700 dark:text-slate-300">VITE_SUPABASE_URL</code> in AI Studio's Secrets (Settings gear on the right).
-                  </li>
-                  <li>
-                    Copy the <strong className="text-slate-700 dark:text-slate-200">anon public</strong> key (starts with <code className="font-mono">eyJ...</code>) and set it as <code className="bg-slate-100 dark:bg-slate-900 px-1 py-0.5 rounded font-mono text-[10px] text-slate-700 dark:text-slate-300">VITE_SUPABASE_ANON_KEY</code> in AI Studio's Secrets.
-                  </li>
-                </ul>
-              </div>
-
-              <div>
-                <p className="font-semibold mb-1.5 text-slate-900 dark:text-white">3. Database Schema Setup</p>
-                <p className="leading-relaxed mb-2 text-slate-500 dark:text-slate-400">
-                  Make sure you have executed the database schema in your <strong className="text-slate-700 dark:text-slate-200">Supabase SQL Editor</strong> to create all tables (tasks, habits, preferences):
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const sqlText = `
--- 1. Create Tasks table
-CREATE TABLE public.tasks (
-  id TEXT PRIMARY KEY,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  name TEXT NOT NULL,
-  description TEXT,
-  category TEXT,
-  priority TEXT,
-  due_date TEXT,
-  due_time TEXT,
-  reminder BOOLEAN,
-  repeat TEXT,
-  color_label TEXT,
-  duration INTEGER,
-  subtasks JSONB,
-  notes TEXT,
-  completed BOOLEAN,
-  completed_at TEXT,
-  pinned BOOLEAN,
-  order_num INTEGER,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
-
--- 2. Create Habits table
-CREATE TABLE public.habits (
-  id TEXT PRIMARY KEY,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  name TEXT NOT NULL,
-  frequency TEXT,
-  streak INTEGER,
-  best_streak INTEGER,
-  history JSONB,
-  paused BOOLEAN,
-  color_label TEXT,
-  created_at TEXT
-);
-
--- 3. Create Categories table
-CREATE TABLE public.categories (
-  id TEXT PRIMARY KEY,
-  user_id UUID REFERENCES auth.users,
-  name TEXT NOT NULL,
-  color TEXT,
-  icon TEXT,
-  is_custom BOOLEAN
-);
-
--- 4. Create Achievements table
-CREATE TABLE public.achievements (
-  id TEXT NOT NULL,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT,
-  icon_name TEXT,
-  unlocked_at TEXT,
-  requirement_type TEXT,
-  PRIMARY KEY (id, user_id)
-);
-
--- 5. Create Preferences table
-CREATE TABLE public.preferences (
-  user_id UUID REFERENCES auth.users PRIMARY KEY,
-  dark_mode BOOLEAN,
-  notification_reminders BOOLEAN,
-  reminder_times TEXT,
-  start_of_week TEXT,
-  time_format TEXT,
-  default_home_mode TEXT,
-  theme_color TEXT,
-  daily_goal TEXT,
-  daily_goal_date TEXT,
-  daily_goal_completed BOOLEAN,
-  daily_goal_completed_date TEXT
-);
-
--- Enable RLS
-ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.habits ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.achievements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.preferences ENABLE ROW LEVEL SECURITY;
-
--- Set up Policies
-CREATE POLICY "Users can modify their own tasks" ON public.tasks FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can modify their own habits" ON public.habits FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can modify public or their own categories" ON public.categories FOR ALL USING (auth.uid() = user_id OR user_id IS NULL);
-CREATE POLICY "Users can modify their own achievements" ON public.achievements FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can modify their own preferences" ON public.preferences FOR ALL USING (auth.uid() = user_id);
-                    `.trim();
-                    navigator.clipboard.writeText(sqlText);
-                    setCopiedSql(true);
-                    setTimeout(() => setCopiedSql(false), 2000);
-                  }}
-                  className="w-full flex items-center justify-center gap-1.5 py-2.5 px-3 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 text-blue-600 dark:text-blue-400 font-bold rounded-xl transition-colors cursor-pointer"
-                >
-                  {copiedSql ? (
-                    <>
-                      <Check size={14} />
-                      <span>Copied to Clipboard!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={14} />
-                      <span>Copy Schema SQL Script</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       </motion.div>
     </div>

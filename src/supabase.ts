@@ -1,202 +1,185 @@
-import { createClient } from '@supabase/supabase-js';
 import { Task, Habit, Category, Achievement, UserPreferences } from './types';
+import { auth, googleAuthProvider } from './lib/firebase.ts';
+import { 
+  signInWithPopup, 
+  signInWithEmailAndPassword, 
+  createUserWithEmailAndPassword, 
+  signOut as firebaseSignOut 
+} from 'firebase/auth';
 
-// Strip quotes and trim whitespace from environment variables safely
-const cleanEnvValue = (val: string) => {
-  if (!val) return '';
-  let cleaned = val.trim();
-  if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-    cleaned = cleaned.substring(1, cleaned.length - 1);
-  }
-  return cleaned.trim();
-};
+export const supabaseUrl = 'https://cloudsql.local';
+export const supabaseAnonKey = 'cloudsql-key';
+export const hasSupabaseEnv = true;
+export const isSupabaseConfigured = true;
 
-// Read configuration from Vite environment variables safely
-const metaEnv = (import.meta as any).env || {};
-const rawSupabaseUrl = metaEnv.VITE_SUPABASE_URL || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_URL : '') || '';
-const rawSupabaseAnonKey = metaEnv.VITE_SUPABASE_ANON_KEY || (typeof process !== 'undefined' ? process.env?.VITE_SUPABASE_ANON_KEY : '') || '';
-
-export const supabaseUrl = cleanEnvValue(rawSupabaseUrl);
-export const supabaseAnonKey = cleanEnvValue(rawSupabaseAnonKey);
-
-const isPlaceholder = (url: string, key: string) => {
-  return !url || !key || url.includes('placeholder-project') || key.includes('placeholder-key') || url.includes('YOUR_SUPABASE_URL');
-};
-
-export const hasSupabaseEnv = !isPlaceholder(supabaseUrl, supabaseAnonKey);
-export const isSupabaseConfigured = hasSupabaseEnv && localStorage.getItem('aura_use_local_storage_mode') !== 'true';
-
-// Use a fallback to prevent runtime crashes if variables are missing
-export const supabase = createClient(
-  supabaseUrl || 'https://placeholder-project.supabase.co',
-  supabaseAnonKey || 'placeholder-key'
-);
-
-export function diagnoseSupabaseConfig(): { isValid: boolean; errors: string[]; warnings: string[]; maskedUrl: string; maskedKey: string } {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-
-  const maskUrl = (url: string) => {
-    if (!url) return 'Not configured';
-    try {
-      if (url.includes('@')) {
-        const parts = url.split('@');
-        const protocolPart = parts[0].split('://');
-        const protocol = protocolPart[0];
-        const host = parts[1];
-        return `${protocol}://[username]:[password]@${host}`;
-      }
-      if (url.startsWith('http')) {
-        const parsed = new URL(url);
-        const hostParts = parsed.hostname.split('.');
-        if (hostParts[0].length > 4) {
-          hostParts[0] = hostParts[0].substring(0, 3) + '***';
-        } else {
-          hostParts[0] = '***';
-        }
-        return `${parsed.protocol}//${hostParts.join('.')}`;
-      }
-      return url.substring(0, Math.min(10, url.length)) + '...';
-    } catch (e) {
-      return url.substring(0, Math.min(10, url.length)) + '...';
-    }
-  };
-
-  const maskKey = (key: string) => {
-    if (!key) return 'Not configured';
-    if (key.length > 15) {
-      return `${key.substring(0, 6)}...${key.substring(key.length - 6)}`;
-    }
-    return '***';
-  };
-
-  const maskedUrl = maskUrl(rawSupabaseUrl);
-  const maskedKey = maskKey(rawSupabaseAnonKey);
-
-  if (!rawSupabaseUrl) {
-    errors.push("VITE_SUPABASE_URL is empty or not configured. Set it in the Secrets panel in AI Studio.");
-  } else {
-    const url = supabaseUrl;
-    if (url.startsWith('postgres://') || url.startsWith('postgresql://') || url.includes('5432')) {
-      errors.push("VITE_SUPABASE_URL appears to be a PostgreSQL database connection string. You must use the HTTP API URL (e.g. 'https://xxxx.supabase.co') instead of the database connection string.");
-    } else if (!url.startsWith('https://') && !url.startsWith('http://')) {
-      errors.push("VITE_SUPABASE_URL must start with 'https://' (e.g. 'https://xxxx.supabase.co'). Make sure you didn't miss the protocol prefix.");
-    }
-  }
-
-  if (!rawSupabaseAnonKey) {
-    errors.push("VITE_SUPABASE_ANON_KEY is empty or not configured. Set it in the Secrets panel in AI Studio.");
-  } else {
-    const key = supabaseAnonKey;
-    if (key.length < 20) {
-      errors.push("VITE_SUPABASE_ANON_KEY is too short. Ensure you copied the 'anon' 'public' key (a long JSON Web Token), not the database password or project reference.");
-    }
-  }
-
+// Helper to construct auth headers with Firebase token
+async function getAuthHeaders() {
+  const user = auth.currentUser;
+  if (!user) return {};
+  const token = await user.getIdToken();
   return {
-    isValid: errors.length === 0,
-    errors,
-    warnings,
-    maskedUrl,
-    maskedKey
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json',
   };
 }
 
-/*
-=========================================
-SUPABASE DATABASE SQL SCHEMA INSTRUCTIONS
-=========================================
-Copy and paste this SQL script into your Supabase SQL Editor to set up the necessary tables and RLS:
+// Global API Fetch helper
+async function apiCall(endpoint: string, method: string, body: any = null) {
+  const headers = await getAuthHeaders();
+  const options: RequestInit = {
+    method,
+    headers,
+  };
+  if (body) {
+    options.body = JSON.stringify(body);
+  }
+  const res = await fetch(endpoint, options);
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`API error (${res.status}): ${errText || res.statusText}`);
+  }
+  return res.json();
+}
 
--- 1. Create Tasks table
-CREATE TABLE public.tasks (
-  id TEXT PRIMARY KEY,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  name TEXT NOT NULL,
-  description TEXT,
-  category TEXT,
-  priority TEXT,
-  due_date TEXT,
-  due_time TEXT,
-  reminder BOOLEAN,
-  repeat TEXT,
-  color_label TEXT,
-  duration INTEGER,
-  subtasks JSONB,
-  notes TEXT,
-  completed BOOLEAN,
-  completed_at TEXT,
-  pinned BOOLEAN,
-  order_num INTEGER,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
-);
+// Query builder to mimic supabase.from()
+class SupabaseQueryBuilder {
+  tableName: string;
+  constructor(tableName: string) {
+    this.tableName = tableName;
+  }
 
--- 2. Create Habits table
-CREATE TABLE public.habits (
-  id TEXT PRIMARY KEY,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  name TEXT NOT NULL,
-  frequency TEXT,
-  streak INTEGER,
-  best_streak INTEGER,
-  history JSONB,
-  paused BOOLEAN,
-  color_label TEXT,
-  created_at TEXT
-);
+  delete() {
+    return {
+      in: async (field: string, values: any[]) => {
+        try {
+          await apiCall(`/api/${this.tableName}`, 'DELETE', { ids: values });
+          return { error: null };
+        } catch (error: any) {
+          console.error(`Error deleting from ${this.tableName}:`, error);
+          return { error };
+        }
+      }
+    };
+  }
 
--- 3. Create Categories table
-CREATE TABLE public.categories (
-  id TEXT PRIMARY KEY,
-  user_id UUID REFERENCES auth.users,
-  name TEXT NOT NULL,
-  color TEXT,
-  icon TEXT,
-  is_custom BOOLEAN
-);
+  async upsert(values: any) {
+    try {
+      if (this.tableName === 'preferences') {
+        await apiCall(`/api/preferences/upsert`, 'POST', { row: values });
+      } else {
+        const rows = Array.isArray(values) ? values : [values];
+        await apiCall(`/api/${this.tableName}/upsert`, 'POST', { rows });
+      }
+      return { error: null };
+    } catch (error: any) {
+      console.error(`Error upserting to ${this.tableName}:`, error);
+      return { error };
+    }
+  }
+}
 
--- 4. Create Achievements table
-CREATE TABLE public.achievements (
-  id TEXT NOT NULL,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  title TEXT NOT NULL,
-  description TEXT,
-  icon_name TEXT,
-  unlocked_at TEXT,
-  requirement_type TEXT,
-  PRIMARY KEY (id, user_id)
-);
+// Mock client containing auth and from queries
+export const supabase = {
+  auth: {
+    async getSession() {
+      const user = auth.currentUser;
+      if (user) {
+        return { data: { session: { user: { id: user.uid, email: user.email } } }, error: null };
+      }
+      return { data: { session: null }, error: null };
+    },
 
--- 5. Create Preferences table
-CREATE TABLE public.preferences (
-  user_id UUID REFERENCES auth.users PRIMARY KEY,
-  dark_mode BOOLEAN,
-  notification_reminders BOOLEAN,
-  reminder_times TEXT,
-  start_of_week TEXT,
-  time_format TEXT,
-  default_home_mode TEXT,
-  theme_color TEXT,
-  daily_goal TEXT,
-  daily_goal_date TEXT,
-  daily_goal_completed BOOLEAN,
-  daily_goal_completed_date TEXT
-);
+    async getUser() {
+      const user = auth.currentUser;
+      if (user) {
+        const name = user.displayName || user.email?.split('@')[0] || 'Alade';
+        return { 
+          data: { 
+            user: { 
+              id: user.uid, 
+              email: user.email,
+              user_metadata: { full_name: name }
+            } 
+          }, 
+          error: null 
+        };
+      }
+      return { data: { user: null }, error: new Error('No user logged in') };
+    },
 
--- Enable RLS
-ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.habits ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.achievements ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.preferences ENABLE ROW LEVEL SECURITY;
+    onAuthStateChange(callback: (event: string, session: any) => void) {
+      const unsubscribe = auth.onAuthStateChanged((user) => {
+        if (user) {
+          callback('SIGNED_IN', { user: { id: user.uid, email: user.email } });
+        } else {
+          callback('SIGNED_OUT', null);
+        }
+      });
+      return { data: { subscription: { unsubscribe } } };
+    },
 
--- Set up Policies
-CREATE POLICY "Users can modify their own tasks" ON public.tasks FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can modify their own habits" ON public.habits FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can modify public or their own categories" ON public.categories FOR ALL USING (auth.uid() = user_id OR user_id IS NULL);
-CREATE POLICY "Users can modify their own achievements" ON public.achievements FOR ALL USING (auth.uid() = user_id);
-CREATE POLICY "Users can modify their own preferences" ON public.preferences FOR ALL USING (auth.uid() = user_id);
-*/
+    async signInWithOAuth(params: any) {
+      try {
+        const result = await signInWithPopup(auth, googleAuthProvider);
+        return { data: { url: null, user: result.user }, error: null };
+      } catch (error: any) {
+        console.error('Firebase OAuth error:', error);
+        return { data: null, error };
+      }
+    },
+
+    async signUp(params: any) {
+      try {
+        const { email, password } = params;
+        const result = await createUserWithEmailAndPassword(auth, email, password);
+        return { data: { user: result.user, session: {} }, error: null };
+      } catch (error: any) {
+        console.error('Firebase Register error:', error);
+        return { data: { user: null, session: null }, error };
+      }
+    },
+
+    async signInWithPassword(params: any) {
+      try {
+        const { email, password } = params;
+        const result = await signInWithEmailAndPassword(auth, email, password);
+        return { data: { user: result.user, session: {} }, error: null };
+      } catch (error: any) {
+        console.error('Firebase Password Sign In error:', error);
+        return { data: { user: null, session: null }, error };
+      }
+    },
+
+    async signOut() {
+      try {
+        await firebaseSignOut(auth);
+        return { error: null };
+      } catch (error: any) {
+        console.error('Firebase Sign Out error:', error);
+        return { error };
+      }
+    },
+
+    async setSession(params: any) {
+      // Stub for setSession
+      return { data: { session: {} }, error: null };
+    }
+  },
+
+  from(tableName: string) {
+    return new SupabaseQueryBuilder(tableName);
+  }
+};
+
+export function diagnoseSupabaseConfig() {
+  return {
+    isValid: true,
+    errors: [] as string[],
+    warnings: [] as string[],
+    maskedUrl: 'Cloud SQL / Firebase Active',
+    maskedKey: 'Active'
+  };
+}
 
 // --- DATA MAPPING HELPERS ---
 
@@ -230,11 +213,11 @@ export function mapTaskFromDb(row: any): Task {
     description: row.description || '',
     category: row.category || '',
     priority: row.priority || 'Medium',
-    dueDate: row.due_date || '',
-    dueTime: row.due_time || '',
+    dueDate: row.due_date || row.dueDate || '',
+    dueTime: row.due_time || row.dueTime || '',
     reminder: !!row.reminder,
     repeat: row.repeat || 'None',
-    colorLabel: row.color_label || '',
+    colorLabel: row.color_label || row.colorLabel || '',
     duration: row.duration || 0,
     subtasks: Array.isArray(row.subtasks)
       ? row.subtasks
@@ -243,9 +226,9 @@ export function mapTaskFromDb(row: any): Task {
       : row.subtasks || [],
     notes: row.notes || '',
     completed: !!row.completed,
-    completedAt: row.completed_at || undefined,
+    completedAt: row.completed_at || row.completedAt || undefined,
     pinned: !!row.pinned,
-    order: row.order_num || 0,
+    order: row.order_num || row.orderNum || 0,
   };
 }
 
@@ -270,13 +253,13 @@ export function mapHabitFromDb(row: any): Habit {
     name: row.name,
     frequency: row.frequency || 'Daily',
     streak: row.streak || 0,
-    bestStreak: row.best_streak || 0,
+    bestStreak: row.best_streak || row.bestStreak || 0,
     history: typeof row.history === 'string'
       ? JSON.parse(row.history)
       : row.history || {},
     paused: !!row.paused,
-    colorLabel: row.color_label || '',
-    createdAt: row.created_at || new Date().toISOString(),
+    colorLabel: row.color_label || row.colorLabel || '',
+    createdAt: row.created_at || row.createdAt || new Date().toISOString(),
   };
 }
 
@@ -297,7 +280,7 @@ export function mapCategoryFromDb(row: any): Category {
     name: row.name,
     color: row.color || 'bg-blue-500',
     icon: row.icon || 'CheckCircle',
-    isCustom: !!row.is_custom,
+    isCustom: !!row.is_custom || !!row.isCustom,
   };
 }
 
@@ -318,9 +301,9 @@ export function mapAchievementFromDb(row: any): Achievement {
     id: row.id,
     title: row.title,
     description: row.description || '',
-    iconName: row.icon_name || 'Award',
-    unlockedAt: row.unlocked_at || undefined,
-    requirementType: row.requirement_type || 'first_task',
+    iconName: row.icon_name || row.iconName || 'Award',
+    unlockedAt: row.unlocked_at || row.unlockedAt || undefined,
+    requirementType: row.requirement_type || row.requirementType || 'first_task',
   };
 }
 
@@ -343,43 +326,34 @@ export function mapPreferencesToDb(prefs: UserPreferences, userId: string) {
 
 export function mapPreferencesFromDb(row: any): UserPreferences {
   return {
-    darkMode: !!row.dark_mode,
-    notificationReminders: !!row.notification_reminders,
-    reminderTimes: row.reminder_times || '09:00',
-    startOfWeek: row.start_of_week || 'Monday',
-    timeFormat: row.time_format || '12h',
-    defaultHomeMode: row.default_home_mode || 'Productivity',
-    themeColor: row.theme_color || 'indigo',
-    dailyGoal: row.daily_goal || '',
-    dailyGoalDate: row.daily_goal_date || '',
-    dailyGoalCompleted: !!row.daily_goal_completed,
-    dailyGoalCompletedDate: row.daily_goal_completed_date || '',
+    darkMode: !!row.dark_mode || !!row.darkMode,
+    notificationReminders: !!row.notification_reminders || !!row.notificationReminders,
+    reminderTimes: row.reminder_times || row.reminderTimes || '09:00',
+    startOfWeek: row.start_of_week || row.startOfWeek || 'Monday',
+    timeFormat: row.time_format || row.timeFormat || '12h',
+    defaultHomeMode: row.default_home_mode || row.defaultHomeMode || 'Productivity',
+    themeColor: row.theme_color || row.themeColor || 'indigo',
+    dailyGoal: row.daily_goal || row.dailyGoal || '',
+    dailyGoalDate: row.daily_goal_date || row.dailyGoalDate || '',
+    dailyGoalCompleted: !!row.daily_goal_completed || !!row.dailyGoalCompleted,
+    dailyGoalCompletedDate: row.daily_goal_completed_date || row.dailyGoalCompletedDate || '',
   };
 }
 
 // --- DATABASE SYNC FUNCTIONS ---
 
 export async function syncPullAll(userId: string) {
-  if (!isSupabaseConfigured) return null;
-
   try {
-    const [tasksRes, habitsRes, categoriesRes, achievementsRes, prefsRes] = await Promise.all([
-      supabase.from('tasks').select('*').eq('user_id', userId),
-      supabase.from('habits').select('*').eq('user_id', userId),
-      supabase.from('categories').select('*').or(`user_id.eq.${userId},user_id.is.null`),
-      supabase.from('achievements').select('*').eq('user_id', userId),
-      supabase.from('preferences').select('*').eq('user_id', userId).single(),
-    ]);
-
+    const data = await apiCall('/api/sync/pull', 'GET');
     return {
-      tasks: tasksRes.data ? tasksRes.data.map(mapTaskFromDb) : null,
-      habits: habitsRes.data ? habitsRes.data.map(mapHabitFromDb) : null,
-      categories: categoriesRes.data ? categoriesRes.data.map(mapCategoryFromDb) : null,
-      achievements: achievementsRes.data ? achievementsRes.data.map(mapAchievementFromDb) : null,
-      preferences: prefsRes.data ? mapPreferencesFromDb(prefsRes.data) : null,
+      tasks: data.tasks ? data.tasks.map(mapTaskFromDb) : [],
+      habits: data.habits ? data.habits.map(mapHabitFromDb) : [],
+      categories: data.categories ? data.categories.map(mapCategoryFromDb) : [],
+      achievements: data.achievements ? data.achievements.map(mapAchievementFromDb) : [],
+      preferences: data.preferences ? mapPreferencesFromDb(data.preferences) : null,
     };
   } catch (error) {
-    console.error('Error pulling data from Supabase:', error);
+    console.error('Error pulling data from Cloud SQL API:', error);
     return null;
   }
 }
@@ -394,32 +368,17 @@ export async function syncPushAll(
     preferences: UserPreferences;
   }
 ) {
-  if (!isSupabaseConfigured) return false;
-
   try {
-    const taskRows = data.tasks.map(t => mapTaskToDb(t, userId));
-    const habitRows = data.habits.map(h => mapHabitToDb(h, userId));
-    const categoryRows = data.categories.filter(c => c.isCustom).map(c => mapCategoryToDb(c, userId));
-    const achievementRows = data.achievements.map(a => mapAchievementToDb(a, userId));
-    const prefRow = mapPreferencesToDb(data.preferences, userId);
-
-    if (taskRows.length > 0) {
-      await supabase.from('tasks').upsert(taskRows);
-    }
-    if (habitRows.length > 0) {
-      await supabase.from('habits').upsert(habitRows);
-    }
-    if (categoryRows.length > 0) {
-      await supabase.from('categories').upsert(categoryRows);
-    }
-    if (achievementRows.length > 0) {
-      await supabase.from('achievements').upsert(achievementRows);
-    }
-    await supabase.from('preferences').upsert(prefRow);
-
+    await apiCall('/api/sync/push', 'POST', {
+      tasks: data.tasks.map(t => mapTaskToDb(t, userId)),
+      habits: data.habits.map(h => mapHabitToDb(h, userId)),
+      categories: data.categories.filter(c => c.isCustom).map(c => mapCategoryToDb(c, userId)),
+      achievements: data.achievements.map(a => mapAchievementToDb(a, userId)),
+      preferences: mapPreferencesToDb(data.preferences, userId),
+    });
     return true;
   } catch (error) {
-    console.error('Error pushing data to Supabase:', error);
+    console.error('Error pushing data to Cloud SQL API:', error);
     return false;
   }
 }
