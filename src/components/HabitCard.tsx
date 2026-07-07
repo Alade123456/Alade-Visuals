@@ -47,6 +47,13 @@ export default function HabitCard({
   const totalCompleted = Object.values(habit.history).filter(Boolean).length;
   const completionRate = totalLogged > 0 ? Math.round((totalCompleted / totalLogged) * 100) : 0;
 
+  const getStreakColor = (streak: number) => {
+    if (streak >= 10) return 'text-yellow-400 fill-yellow-400 drop-shadow-sm'; // Gold
+    if (streak >= 5) return 'text-slate-300 fill-slate-300 drop-shadow-sm'; // Silver
+    if (streak > 0) return 'text-amber-600 fill-amber-600 drop-shadow-sm'; // Bronze
+    return 'text-transparent';
+  };
+
   return (
     <motion.div
       layout
@@ -76,9 +83,14 @@ export default function HabitCard({
             >
               {habit.name}
             </h4>
-            <p className="text-xs text-gray-400 font-medium mt-0.5">
-              <strong id={`habit-streak-${habit.id}`}>{habit.streak} day streak</strong> • Best: {habit.bestStreak}d
-            </p>
+            <div className="text-xs text-gray-400 font-medium mt-0.5 flex items-center gap-1.5">
+              <strong id={`habit-streak-${habit.id}`} className="flex items-center gap-0.5">
+                {habit.streak > 0 && <Flame className={`w-3.5 h-3.5 ${getStreakColor(habit.streak)}`} />}
+                {habit.streak} day streak
+              </strong> 
+              <span>•</span> 
+              <span>Best: {habit.bestStreak}d</span>
+            </div>
           </div>
         </div>
 

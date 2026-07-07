@@ -4,7 +4,8 @@ import {
   signInWithPopup, 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
-  signOut as firebaseSignOut 
+  signOut as firebaseSignOut,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 
 export const supabaseUrl = 'https://cloudsql.local';
@@ -156,6 +157,16 @@ export const supabase = {
         return { error: null };
       } catch (error: any) {
         console.error('Firebase Sign Out error:', error);
+        return { error };
+      }
+    },
+
+    async resetPasswordForEmail(email: string) {
+      try {
+        await sendPasswordResetEmail(auth, email);
+        return { error: null };
+      } catch (error: any) {
+        console.error('Firebase Password Reset error:', error);
         return { error };
       }
     },

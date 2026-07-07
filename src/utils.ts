@@ -244,7 +244,6 @@ export const INITIAL_ACHIEVEMENTS: Achievement[] = [
     title: 'First Step Forward',
     description: 'Complete your first single-time task.',
     iconName: 'CheckCircle',
-    unlockedAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
     requirementType: 'first_task'
   },
   {
@@ -252,7 +251,6 @@ export const INITIAL_ACHIEVEMENTS: Achievement[] = [
     title: 'Spark of Habit',
     description: 'Log and complete your first recurring habit.',
     iconName: 'Zap',
-    unlockedAt: new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString(),
     requirementType: 'first_habit'
   },
   {
@@ -260,7 +258,6 @@ export const INITIAL_ACHIEVEMENTS: Achievement[] = [
     title: 'Weekly Catalyst',
     description: 'Maintain a perfect 7-day habit or task streak.',
     iconName: 'Flame',
-    unlockedAt: new Date(Date.now() - 2 * 24 * 3600 * 1000).toISOString(),
     requirementType: 'streak_7'
   },
   {

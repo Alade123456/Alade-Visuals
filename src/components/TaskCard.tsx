@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { 
   Check, Clock, Flag, Pin, Trash2, Edit2, 
-  ChevronDown, ChevronUp, ListTodo, Paperclip, AlertCircle 
+  ChevronDown, ChevronUp, ListTodo, Paperclip, AlertCircle,
+  Play, Pause, Square, Coffee, Timer
 } from 'lucide-react';
 import { Task, Priority } from '../types';
 import { formatTimeStr, formatDate } from '../utils';
@@ -28,6 +29,54 @@ export default function TaskCard({
   const [isExpanded, setIsExpanded] = useState(false);
   const todayStr = formatDate(new Date());
   
+  // Pomodoro Timer State
+  const [timerMode, setTimerMode] = useState<'idle' | 'work' | 'break'>('idle');
+  const [timerStatus, setTimerStatus] = useState<'paused' | 'running'>('paused');
+  const [timeLeft, setTimeLeft] = useState(25 * 60);
+
+  useEffect(() => {
+    let interval: any;
+    if (timerStatus === 'running' && timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(prev => prev - 1);
+      }, 1000);
+    } else if (timeLeft === 0) {
+      // Auto-switch mode on complete
+      if (timerMode === 'work') {
+        setTimerMode('break');
+        setTimeLeft(5 * 60); // 5 min break
+        setTimerStatus('paused');
+      } else if (timerMode === 'break') {
+        setTimerMode('work');
+        setTimeLeft(25 * 60);
+        setTimerStatus('paused');
+      }
+    }
+    return () => clearInterval(interval);
+  }, [timerStatus, timeLeft, timerMode]);
+
+  const toggleTimer = () => {
+    if (timerMode === 'idle') {
+      setTimerMode('work');
+      setTimeLeft(25 * 60);
+      setTimerStatus('running');
+    } else {
+      setTimerStatus(prev => prev === 'running' ? 'paused' : 'running');
+    }
+  };
+
+  const stopTimer = () => {
+    setTimerMode('idle');
+    setTimerStatus('paused');
+    setTimeLeft(25 * 60);
+  };
+
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
   const isOverdue = !task.completed && task.dueDate < todayStr;
   const isToday = task.dueDate === todayStr;
 
@@ -58,14 +107,16 @@ export default function TaskCard({
       id={`task-card-${task.id}`}
       className={`group relative minimal-card flex items-start space-x-4 border-l-4 transition-all ${
         task.completed 
-          ? 'bg-gray-50 shadow-none border-green-500 opacity-80' 
-          : isOverdue 
-            ? 'border-red-500' 
-            : task.priority === 'High' || task.priority === 'Urgent'
-              ? 'border-red-500'
-              : task.priority === 'Medium'
-                ? 'border-yellow-400'
-                : 'border-blue-500'
+          ? 'bg-gray-50 shadow-none border-green-500 opacity-80 dark:bg-slate-800/50' 
+          : timerMode !== 'idle'
+            ? 'border-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/10'
+            : isOverdue 
+              ? 'border-red-500' 
+              : task.priority === 'High' || task.priority === 'Urgent'
+                ? 'border-red-500'
+                : task.priority === 'Medium'
+                  ? 'border-yellow-400'
+                  : 'border-blue-500'
       }`}
     >
 
@@ -85,13 +136,13 @@ export default function TaskCard({
           </button>
 
           {/* Main Content Area */}
-          <div className="flex-1 min-w-0" onClick={() => setIsExpanded(!isExpanded)}>
-            <div className="flex items-center justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between" onClick={() => setIsExpanded(!isExpanded)}>
               <h4 
                 id={`task-title-${task.id}`}
                 className={`text-base font-bold tracking-tight cursor-pointer ${
                   task.completed 
-                    ? 'text-gray-400 line-through' 
+                    ? 'text-gray-400 line-through dark:text-slate-500' 
                     : 'text-gray-800 dark:text-slate-100'
                 }`}
               >
@@ -107,7 +158,7 @@ export default function TaskCard({
               </div>
             </div>
           
-          <p className="text-xs text-gray-400 mt-1 font-medium flex items-center gap-1.5">
+          <p className="text-xs text-gray-400 mt-1 font-medium flex items-center gap-1.5 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
             {task.completed ? 'Completed' : `Due ${formatTimeStr(task.dueTime)}`} • {task.category}
             {isOverdue && <span className="text-red-500 flex items-center"><AlertCircle className="w-3 h-3 ml-1 mr-0.5" /> Overdue</span>}
             {task.pinned && <Pin className="w-3.5 h-3.5 text-blue-500 fill-blue-500 transform rotate-45 ml-1" />}
@@ -115,13 +166,21 @@ export default function TaskCard({
 
           {/* Description Preview (if not expanded) */}
           {task.description && !isExpanded && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-1 cursor-pointer">
+            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-1 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
               {task.description}
             </p>
           )}
 
+          {/* Pomodoro Timer Inline Display (when running but not expanded) */}
+          {!isExpanded && timerMode !== 'idle' && (
+            <div className="mt-3 inline-flex items-center gap-2 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-bold">
+              {timerStatus === 'running' ? <Timer className="w-3.5 h-3.5 animate-pulse" /> : <Pause className="w-3.5 h-3.5" />}
+              {formatTimer(timeLeft)} - {timerMode === 'work' ? 'Focusing' : 'Break'}
+            </div>
+          )}
+
           {/* Badges and details row */}
-          <div className="flex flex-wrap items-center gap-2 mt-2">
+          <div className="flex flex-wrap items-center gap-2 mt-2" onClick={() => setIsExpanded(!isExpanded)}>
             {/* Subtasks Count */}
             {progress && (
               <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500 font-semibold bg-slate-50 dark:bg-slate-850 px-1.5 py-0.5 rounded">
@@ -144,6 +203,13 @@ export default function TaskCard({
 
           {/* Quick Action Side Buttons (Always visible on desktop hover, neat toggle on tap) */}
           <div className="flex items-center gap-1.5 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleTimer(); setIsExpanded(true); }}
+              title="Focus Timer"
+              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${timerMode !== 'idle' ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+            >
+              <Timer className="w-3.5 h-3.5" />
+            </button>
             <button
               id={`btn-pin-task-${task.id}`}
               onClick={(e) => { e.stopPropagation(); onTogglePin(task.id); }}
@@ -171,7 +237,7 @@ export default function TaskCard({
             <button
               id={`btn-expand-task-${task.id}`}
               onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
-              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
@@ -183,8 +249,61 @@ export default function TaskCard({
           <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
-            className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 pl-8 text-slate-700 dark:text-slate-300"
+            className="mt-1 pt-3 pb-4 border-t border-slate-100 dark:border-slate-800/60 space-y-4 pl-[4.5rem] pr-5 text-slate-700 dark:text-slate-300"
           >
+            {/* Pomodoro Timer Module */}
+            <div className={`p-4 rounded-2xl border transition-colors ${timerMode !== 'idle' ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/50' : 'bg-slate-50 dark:bg-slate-850 border-slate-100 dark:border-slate-800'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 ${timerMode !== 'idle' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}>
+                  {timerMode === 'work' ? <Timer className="w-3 h-3" /> : timerMode === 'break' ? <Coffee className="w-3 h-3" /> : <Timer className="w-3 h-3" />}
+                  {timerMode === 'work' ? 'Focus Session' : timerMode === 'break' ? 'Break Time' : 'Pomodoro Timer'}
+                </span>
+                {timerMode !== 'idle' && (
+                  <button onClick={stopTimer} className="text-[10px] font-bold text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors cursor-pointer">
+                    <Square className="w-3 h-3" /> Stop
+                  </button>
+                )}
+              </div>
+              
+              <div className="flex items-center gap-4">
+                <div className={`text-4xl font-mono font-bold tracking-tight ${timerMode !== 'idle' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-700 dark:text-slate-300'}`}>
+                  {formatTimer(timeLeft)}
+                </div>
+                
+                <div className="flex items-center gap-2 ml-auto">
+                  {timerMode === 'idle' ? (
+                    <button 
+                      onClick={toggleTimer}
+                      className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" /> Start Focus
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={toggleTimer}
+                      className={`${timerStatus === 'running' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-indigo-500 hover:bg-indigo-600'} text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer`}
+                    >
+                      {timerStatus === 'running' ? (
+                        <><Pause className="w-3.5 h-3.5 fill-current" /> Pause</>
+                      ) : (
+                        <><Play className="w-3.5 h-3.5 fill-current" /> Resume</>
+                      )}
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              {/* Pomodoro Progress Bar */}
+              {timerMode !== 'idle' && (
+                <div className="w-full bg-indigo-100 dark:bg-indigo-900/50 h-1.5 rounded-full mt-4 overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-1000 ease-linear ${timerMode === 'work' ? 'bg-indigo-500' : 'bg-emerald-500'}`} 
+                    style={{ width: `${(timeLeft / (timerMode === 'work' ? 25 * 60 : 5 * 60)) * 100}%` }} 
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Extended Description */}
             {task.description && (
               <div className="space-y-0.5">
@@ -195,7 +314,7 @@ export default function TaskCard({
 
             {/* Subtasks interactive list */}
             {task.subtasks && task.subtasks.length > 0 && (
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 mt-4">
                 <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider block">Subtasks Checklist</span>
                 <div className="space-y-1.5">
                   {task.subtasks.map((sub) => (
@@ -226,7 +345,7 @@ export default function TaskCard({
 
             {/* Notes Section */}
             {task.notes && (
-              <div className="space-y-0.5 bg-slate-50 dark:bg-slate-850/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800">
+              <div className="space-y-0.5 bg-slate-50 dark:bg-slate-850/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 mt-4">
                 <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider flex items-center gap-1">
                   <Paperclip className="w-3 h-3" /> Quick Notes
                 </span>
@@ -235,7 +354,7 @@ export default function TaskCard({
             )}
 
             {/* Metadata Footer */}
-            <div className="flex justify-between items-center text-[10px] text-slate-400 dark:text-slate-500 pt-1">
+            <div className="flex justify-between items-center text-[10px] text-slate-400 dark:text-slate-500 pt-3 border-t border-slate-100 dark:border-slate-800 mt-4">
               <span>Duration: {task.duration} mins</span>
               {task.completedAt && (
                 <span>Completed at: {new Date(task.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
