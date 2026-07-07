@@ -5,7 +5,7 @@ import {
   Download, Moon, Sun, Bell, BookOpen, Info, 
   Settings, Award, Flame, CheckCircle, Clock, Pin,
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
-  Play, Pause, Square, X, Zap
+  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { 
   supabase, 
@@ -220,7 +220,10 @@ export default function App() {
   }, [dailyGoalsHistory]);
 
   const [activeTab, setActiveTab] = useState<TabId>(() => {
-    const savedScreen = localStorage.getItem('aura_active_tab') as TabId;
+    let savedScreen = localStorage.getItem('aura_active_tab') as TabId;
+    if (savedScreen === 'calendar' || savedScreen === 'analytics') {
+      savedScreen = 'home';
+    }
     if (savedScreen) return savedScreen;
 
     const saved = localStorage.getItem('aura_preferences');
@@ -306,6 +309,15 @@ export default function App() {
     const saved = localStorage.getItem('aura_focus_duration');
     return saved ? parseInt(saved, 10) : 25; // Default to 25 minutes
   });
+
+  const [isTimerCollapsed, setIsTimerCollapsed] = useState<boolean>(() => {
+    const saved = localStorage.getItem('aura_timer_collapsed');
+    return saved !== null ? saved === 'true' : true; // Default to true (collapsed)
+  });
+
+  useEffect(() => {
+    localStorage.setItem('aura_timer_collapsed', isTimerCollapsed.toString());
+  }, [isTimerCollapsed]);
 
   const [timerState, setTimerState] = useState<'idle' | 'running' | 'paused' | 'completed'>(() => {
     const saved = localStorage.getItem('aura_timer_state') as any;
@@ -463,14 +475,20 @@ export default function App() {
     if (timerState === 'running') {
       const mins = Math.floor(timeLeft / 60);
       const secs = timeLeft % 60;
-      document.title = `(${mins}:${secs.toString().padStart(2, '0')}) Focus | Aura Planner`;
+      document.title = `(${mins}:${secs.toString().padStart(2, '0')}) Focus | GoalsMi`;
     } else {
-      document.title = 'Aura Planner';
+      document.title = 'GoalsMi';
     }
     return () => {
-      document.title = 'Aura Planner';
+      document.title = 'GoalsMi';
     };
   }, [timerState, timeLeft]);
+
+  useEffect(() => {
+    if (timerState === 'completed') {
+      setIsTimerCollapsed(false);
+    }
+  }, [timerState]);
 
   useEffect(() => {
     if (timerState !== 'running' || endTime === null) return;
@@ -727,6 +745,10 @@ export default function App() {
 
   // --- TASK ACTIONS ---
   const handleToggleTaskComplete = (id: string) => {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(15);
+    }
+
     let justCompleted = false;
     setTasks(prev => prev.map(t => {
       if (t.id === id) {
@@ -814,6 +836,10 @@ export default function App() {
   };
 
   const handleToggleSubtask = (taskId: string, subtaskId: string) => {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(15);
+    }
+
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
         const updatedSubtasks = t.subtasks.map(s => s.id === subtaskId ? { ...s, completed: !s.completed } : s);
@@ -825,6 +851,10 @@ export default function App() {
 
   // --- HABIT ACTIONS ---
   const handleToggleHabitToday = (id: string) => {
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(15);
+    }
+
     const todayStr = formatDate(new Date());
     setHabits(prev => prev.map(h => {
       if (h.id === id) {
@@ -1161,12 +1191,24 @@ export default function App() {
         {/* TOP STATUS HEADER BAR */}
         <header className="px-6 pt-6 pb-4 flex justify-between items-center sticky top-0 bg-[#F8F9FA]/95 dark:bg-slate-900/95 backdrop-blur-md z-30">
           <div className="flex items-center gap-2">
-            <span className="p-2 bg-blue-500/10 text-blue-500 rounded-xl">
-              <Sparkles className="w-5 h-5 fill-blue-500/20 stroke-[2.2]" />
+            <span 
+              className="w-9 h-9 bg-blue-500 text-white rounded-xl flex items-center justify-center font-bold text-lg font-sans shadow-md shadow-blue-500/10 shrink-0"
+              style={{ marginBottom: '3px' }}
+            >
+              G
             </span>
             <div>
-              <h1 className="font-display font-extrabold text-base tracking-tight text-slate-900 dark:text-white">
-                Aura Planner
+              <h1 
+                className="font-display font-extrabold text-base tracking-tight text-slate-900 dark:text-white"
+                style={{
+                  paddingLeft: '-3px',
+                  paddingRight: '-26px',
+                  marginLeft: '1px',
+                  marginRight: '0px',
+                  marginBottom: '-7px'
+                }}
+              >
+                GoalsMi
               </h1>
               <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 tracking-wide uppercase">
                 Productive Mindset
@@ -1417,14 +1459,24 @@ export default function App() {
                     initial={{ opacity: 0, y: 15 }}
                     animate={{ opacity: 1, y: 0 }}
                     id="focus-timer-card"
-                    className={`rounded-[24px] bg-white dark:bg-slate-850 p-5 border relative overflow-hidden transition-all duration-300 ${
+                    className={`rounded-[24px] bg-white dark:bg-slate-850 border relative overflow-hidden transition-all duration-300 ${
+                      isTimerCollapsed ? 'p-4' : 'p-5'
+                    } ${
                       timerState === 'running'
                         ? 'animate-border-pulse'
                         : 'border-slate-100 dark:border-slate-800/80 shadow-sm'
                     }`}
                   >
                     {/* Header */}
-                    <div className="flex justify-between items-center mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
+                    <div 
+                      className={`flex justify-between items-center cursor-pointer select-none ${
+                        isTimerCollapsed 
+                          ? '' 
+                          : 'mb-4 border-b border-slate-100 dark:border-slate-800 pb-3'
+                      }`}
+                      onClick={() => setIsTimerCollapsed(!isTimerCollapsed)}
+                      id="timer-card-header"
+                    >
                       <div className="flex items-center gap-2">
                         <span className="p-1.5 bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 rounded-lg shrink-0">
                           <Clock className="w-4 h-4" />
@@ -1436,175 +1488,214 @@ export default function App() {
                         </div>
                       </div>
                       
-                      <button
-                        id="btn-timer-settings"
-                        onClick={() => {
-                          setPickerDuration(focusDuration);
-                          setIsSettingsOpen(true);
-                        }}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                        title="Focus Timer Settings"
-                      >
-                        <Settings className="w-4 h-4" />
-                      </button>
-                    </div>
-
-                    {/* Accidental Stop Confirmation Overlay inside the card */}
-                    {showConfirmStop && (
-                      <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 z-10 p-5 flex flex-col justify-center items-center text-center animate-fade-in">
-                        <AlertCircle className="w-10 h-10 text-amber-500 mb-2" />
-                        <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">
-                          Stop active session?
-                        </h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[80%]">
-                          Your current focus session progress will be lost.
-                        </p>
-                        <div className="flex gap-2.5 mt-4 w-full max-w-[240px]">
-                          <button
-                            id="btn-confirm-stop-yes"
-                            onClick={() => handleConfirmStopTimer(true)}
-                            className="flex-1 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm shadow-rose-500/15"
-                          >
-                            Yes, Stop
-                          </button>
-                          <button
-                            id="btn-confirm-stop-no"
-                            onClick={() => handleConfirmStopTimer(false)}
-                            className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer"
-                          >
-                            Keep Going
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Congratulatory State inside the card */}
-                    {timerState === 'completed' ? (
-                      <div className="text-center py-4 flex flex-col items-center">
-                        <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-3">
-                          <Award className="w-8 h-8 stroke-[2.2]" />
-                        </div>
-                        <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">
-                          Fantastic Job! 🎉
-                        </h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[85%]">
-                          You focused successfully on: <span className="font-bold text-slate-800 dark:text-slate-200">"{preferences.dailyGoal || 'your daily objective'}"</span>
-                        </p>
-                        <button
-                          id="btn-reset-timer-done"
-                          onClick={() => {
-                            setTimerState('idle');
-                            setTimeLeft(focusDuration * 60);
-                          }}
-                          className="mt-4 px-5 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm shadow-indigo-500/20"
-                        >
-                          Start New Session
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {/* Target Focus Goal Title */}
-                        <div className="text-center px-2">
-                          <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Currently Focusing On</p>
-                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5 line-clamp-1 italic">
-                            "{preferences.dailyGoal || 'No primary goal set for today'}"
-                          </p>
-                        </div>
-
-                        {/* Circular Progress Ring or Idle Display */}
-                        <div className="relative flex justify-center items-center py-2">
-                          <div className="relative w-36 h-36 flex items-center justify-center">
-                            <svg className="w-full h-full transform -rotate-90">
-                              <circle
-                                cx="72"
-                                cy="72"
-                                r="64"
-                                className="stroke-slate-100 dark:stroke-slate-800/80"
-                                strokeWidth="5"
-                                fill="transparent"
-                              />
-                              <motion.circle
-                                cx="72"
-                                cy="72"
-                                r="64"
-                                className="stroke-indigo-500"
-                                strokeWidth="5"
-                                fill="transparent"
-                                strokeDasharray={2 * Math.PI * 64}
-                                initial={{ strokeDashoffset: 2 * Math.PI * 64 }}
-                                animate={{
-                                  strokeDashoffset:
-                                    2 * Math.PI * 64 *
-                                    (1 - (focusDuration * 60 - timeLeft) / (focusDuration * 60))
-                                }}
-                                transition={{ duration: 0.35 }}
-                                strokeLinecap="round"
-                              />
-                            </svg>
-                            
-                            <div className="absolute flex flex-col items-center">
-                              <span className="font-mono font-extrabold text-2xl tracking-tight text-slate-800 dark:text-white">
+                      {/* Compact info if collapsed */}
+                      {isTimerCollapsed && (
+                        <div className="flex items-center gap-2 text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                          {timerState === 'completed' ? (
+                            <span className="text-emerald-500 font-sans font-extrabold flex items-center gap-1 animate-bounce">
+                              Done! 🎉
+                            </span>
+                          ) : (
+                            <>
+                              <span>
                                 {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                               </span>
-                              
-                              {/* Percentage completed */}
-                              {timerState !== 'idle' && (
-                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5 animate-pulse">
-                                  {Math.round(((focusDuration * 60 - timeLeft) / (focusDuration * 60)) * 100)}% Done
-                                </span>
-                              )}
-                              
-                              {timerState === 'idle' && (
-                                <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">
-                                  {focusDuration}m Goal
-                                </span>
-                              )}
-                              
-                              {timerState === 'paused' && (
-                                <span className="text-[10px] font-bold text-amber-500 mt-0.5 uppercase tracking-wide">
-                                  Paused
-                                </span>
-                              )}
+                              <span className={`w-2 h-2 rounded-full ${
+                                timerState === 'running' ? 'bg-emerald-500 animate-pulse' :
+                                timerState === 'paused' ? 'bg-amber-500' :
+                                'bg-slate-300 dark:bg-slate-600'
+                              }`} />
+                            </>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1">
+                        {!isTimerCollapsed && (
+                          <button
+                            id="btn-timer-settings"
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevent toggling collapse when clicking settings
+                              setPickerDuration(focusDuration);
+                              setIsSettingsOpen(true);
+                            }}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                            title="Focus Timer Settings"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
+                        )}
+                        <span className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1">
+                          {isTimerCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                        </span>
+                      </div>
+                    </div>
+
+                    {!isTimerCollapsed && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        {/* Accidental Stop Confirmation Overlay inside the card */}
+                        {showConfirmStop && (
+                          <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 z-10 p-5 flex flex-col justify-center items-center text-center animate-fade-in">
+                            <AlertCircle className="w-10 h-10 text-amber-500 mb-2" />
+                            <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">
+                              Stop active session?
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[80%]">
+                              Your current focus session progress will be lost.
+                            </p>
+                            <div className="flex gap-2.5 mt-4 w-full max-w-[240px]">
+                              <button
+                                id="btn-confirm-stop-yes"
+                                onClick={() => handleConfirmStopTimer(true)}
+                                className="flex-1 py-2 bg-rose-500 hover:bg-rose-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm shadow-rose-500/15"
+                              >
+                                Yes, Stop
+                              </button>
+                              <button
+                                id="btn-confirm-stop-no"
+                                onClick={() => handleConfirmStopTimer(false)}
+                                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl cursor-pointer"
+                              >
+                                Keep Going
+                              </button>
                             </div>
                           </div>
-                        </div>
+                        )}
 
-                        {/* Controls */}
-                        <div className="flex justify-center items-center gap-3">
-                          {/* Play / Start Button */}
-                          {timerState !== 'running' ? (
+                        {/* Congratulatory State inside the card */}
+                        {timerState === 'completed' ? (
+                          <div className="text-center py-4 flex flex-col items-center">
+                            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-full flex items-center justify-center mb-3">
+                              <Award className="w-8 h-8 stroke-[2.2]" />
+                            </div>
+                            <h4 className="font-display font-extrabold text-base text-slate-900 dark:text-white">
+                              Fantastic Job! 🎉
+                            </h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-[85%]">
+                              You focused successfully on: <span className="font-bold text-slate-800 dark:text-slate-200">"{preferences.dailyGoal || 'your daily objective'}"</span>
+                            </p>
                             <button
-                              id="btn-timer-start"
-                              onClick={handleStartTimer}
-                              className="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm shadow-indigo-500/20"
+                              id="btn-reset-timer-done"
+                              onClick={() => {
+                                setTimerState('idle');
+                                setTimeLeft(focusDuration * 60);
+                              }}
+                              className="mt-4 px-5 py-2 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl cursor-pointer shadow-sm shadow-indigo-500/20"
                             >
-                              <Play className="w-3.5 h-3.5 fill-white" />
-                              {timerState === 'paused' ? 'Resume' : 'Start'}
+                              Start New Session
                             </button>
-                          ) : (
-                            /* Pause Button */
-                            <button
-                              id="btn-timer-pause"
-                              onClick={handlePauseTimer}
-                              className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm shadow-amber-500/20"
-                            >
-                              <Pause className="w-3.5 h-3.5 fill-white" />
-                              Pause
-                            </button>
-                          )}
+                          </div>
+                        ) : (
+                          <div className="space-y-4 pt-2">
+                            {/* Target Focus Goal Title */}
+                            <div className="text-center px-2">
+                              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Currently Focusing On</p>
+                              <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 mt-0.5 line-clamp-1 italic">
+                                "{preferences.dailyGoal || 'No primary goal set for today'}"
+                              </p>
+                            </div>
 
-                          {/* Stop / Reset Button */}
-                          <button
-                            id="btn-timer-stop"
-                            onClick={handleStopTimer}
-                            disabled={timerState === 'idle'}
-                            className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
-                          >
-                            <Square className="w-3.5 h-3.5 fill-current" />
-                            Stop
-                          </button>
-                        </div>
-                      </div>
+                            {/* Circular Progress Ring or Idle Display */}
+                            <div className="relative flex justify-center items-center py-2">
+                              <div className="relative w-36 h-36 flex items-center justify-center">
+                                <svg className="w-full h-full transform -rotate-90">
+                                  <circle
+                                    cx="72"
+                                    cy="72"
+                                    r="64"
+                                    className="stroke-slate-100 dark:stroke-slate-800/80"
+                                    strokeWidth="5"
+                                    fill="transparent"
+                                  />
+                                  <motion.circle
+                                    cx="72"
+                                    cy="72"
+                                    r="64"
+                                    className="stroke-indigo-500"
+                                    strokeWidth="5"
+                                    fill="transparent"
+                                    strokeDasharray={2 * Math.PI * 64}
+                                    initial={{ strokeDashoffset: 2 * Math.PI * 64 }}
+                                    animate={{
+                                      strokeDashoffset:
+                                        2 * Math.PI * 64 *
+                                        (1 - (focusDuration * 60 - timeLeft) / (focusDuration * 60))
+                                    }}
+                                    transition={{ duration: 0.35 }}
+                                    strokeLinecap="round"
+                                  />
+                                </svg>
+                                
+                                <div className="absolute flex flex-col items-center">
+                                  <span className="font-mono font-extrabold text-2xl tracking-tight text-slate-800 dark:text-white">
+                                    {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
+                                  </span>
+                                  
+                                  {/* Percentage completed */}
+                                  {timerState !== 'idle' && (
+                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5 animate-pulse">
+                                      {Math.round(((focusDuration * 60 - timeLeft) / (focusDuration * 60)) * 100)}% Done
+                                    </span>
+                                  )}
+                                  
+                                  {timerState === 'idle' && (
+                                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 mt-0.5">
+                                      {focusDuration}m Goal
+                                    </span>
+                                  )}
+                                  
+                                  {timerState === 'paused' && (
+                                    <span className="text-[10px] font-bold text-amber-500 mt-0.5 uppercase tracking-wide">
+                                      Paused
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Controls */}
+                            <div className="flex justify-center items-center gap-3">
+                              {/* Play / Start Button */}
+                              {timerState !== 'running' ? (
+                                <button
+                                  id="btn-timer-start"
+                                  onClick={handleStartTimer}
+                                  className="px-5 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm shadow-indigo-500/20"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-white" />
+                                  {timerState === 'paused' ? 'Resume' : 'Start'}
+                                </button>
+                              ) : (
+                                /* Pause Button */
+                                <button
+                                  id="btn-timer-pause"
+                                  onClick={handlePauseTimer}
+                                  className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm shadow-amber-500/20"
+                                >
+                                  <Pause className="w-3.5 h-3.5 fill-white" />
+                                  Pause
+                                </button>
+                              )}
+
+                              {/* Stop / Reset Button */}
+                              <button
+                                id="btn-timer-stop"
+                                onClick={handleStopTimer}
+                                disabled={timerState === 'idle'}
+                                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none text-slate-700 dark:text-slate-200 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
+                              >
+                                <Square className="w-3.5 h-3.5 fill-current" />
+                                Stop
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </motion.div>
                     )}
                   </motion.div>
 
@@ -1613,7 +1704,7 @@ export default function App() {
                     <div className="rounded-[24px] bg-blue-50 dark:bg-blue-950/20 p-4" id="smart-insights-panel">
                       <div className="flex items-center gap-1.5 mb-1 text-blue-500 dark:text-blue-400">
                         <Sparkles className="w-4 h-4 fill-blue-500/10" />
-                        <span className="text-[10px] uppercase font-bold tracking-wider">Aura Insight Engine</span>
+                        <span className="text-[10px] uppercase font-bold tracking-wider">GoalsMi Insight Engine</span>
                       </div>
                       <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
                         "{suggestions[0].text}"
@@ -1669,17 +1760,19 @@ export default function App() {
                           </div>
                         ) : (
                           <div className="space-y-3">
-                            {tasks.filter(t => t.dueDate === todayStr).map(t => (
-                              <TaskCard
-                                key={t.id}
-                                task={t}
-                                onToggleComplete={handleToggleTaskComplete}
-                                onTogglePin={handleToggleTaskPin}
-                                onDelete={handleDeleteTask}
-                                onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
-                                onToggleSubtask={handleToggleSubtask}
-                              />
-                            ))}
+                            <AnimatePresence>
+                              {tasks.filter(t => t.dueDate === todayStr).map(t => (
+                                <TaskCard
+                                  key={t.id}
+                                  task={t}
+                                  onToggleComplete={handleToggleTaskComplete}
+                                  onTogglePin={handleToggleTaskPin}
+                                  onDelete={handleDeleteTask}
+                                  onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
+                                  onToggleSubtask={handleToggleSubtask}
+                                />
+                              ))}
+                            </AnimatePresence>
                           </div>
                         )}
                       </>
@@ -1698,17 +1791,19 @@ export default function App() {
                           </div>
                         ) : (
                           <div className="space-y-3">
-                            {tasks.filter(t => t.dueDate > todayStr).map(t => (
-                              <TaskCard
-                                key={t.id}
-                                task={t}
-                                onToggleComplete={handleToggleTaskComplete}
-                                onTogglePin={handleToggleTaskPin}
-                                onDelete={handleDeleteTask}
-                                onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
-                                onToggleSubtask={handleToggleSubtask}
-                              />
-                            ))}
+                            <AnimatePresence>
+                              {tasks.filter(t => t.dueDate > todayStr).map(t => (
+                                <TaskCard
+                                  key={t.id}
+                                  task={t}
+                                  onToggleComplete={handleToggleTaskComplete}
+                                  onTogglePin={handleToggleTaskPin}
+                                  onDelete={handleDeleteTask}
+                                  onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
+                                  onToggleSubtask={handleToggleSubtask}
+                                />
+                              ))}
+                            </AnimatePresence>
                           </div>
                         )}
                       </>
@@ -1825,7 +1920,7 @@ export default function App() {
 
                   {/* Quick-Capture Input Field */}
                   <form onSubmit={handleQuickAddTask} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/30 dark:from-slate-900 dark:via-slate-900 dark:to-slate-850 p-3.5 rounded-3xl border border-blue-100/70 dark:border-slate-800 shadow-sm" id="quick-capture-form">
-                    <div className="flex-1 flex items-center gap-2">
+                    <div className="flex-1 flex items-center gap-2 relative">
                       <div className="w-8 h-8 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
                         <Zap className="w-4 h-4" />
                       </div>
@@ -1835,8 +1930,19 @@ export default function App() {
                         placeholder="Quick-Capture: Type task title and press Enter..."
                         value={quickTaskName}
                         onChange={(e) => setQuickTaskName(e.target.value)}
-                        className="w-full bg-transparent border-none text-xs font-medium text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none"
+                        className="w-full bg-transparent border-none text-xs font-medium text-slate-800 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none pr-8"
                       />
+                      {quickTaskName && (
+                        <button
+                          type="button"
+                          onClick={() => setQuickTaskName('')}
+                          className="absolute right-1 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                          title="Clear input"
+                          id="btn-clear-quick-task"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                     
                     {/* Inline Priority Selector */}
@@ -1970,17 +2076,19 @@ export default function App() {
                           <Pin className="w-3 h-3 text-blue-500 transform rotate-45" /> Pinned Items
                         </h4>
                         <div className="space-y-3">
-                          {groupTasks.pinned.map(t => (
-                            <TaskCard
-                              key={t.id}
-                              task={t}
-                              onToggleComplete={handleToggleTaskComplete}
-                              onTogglePin={handleToggleTaskPin}
-                              onDelete={handleDeleteTask}
-                              onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
-                              onToggleSubtask={handleToggleSubtask}
-                            />
-                          ))}
+                          <AnimatePresence>
+                            {groupTasks.pinned.map(t => (
+                              <TaskCard
+                                key={t.id}
+                                task={t}
+                                onToggleComplete={handleToggleTaskComplete}
+                                onTogglePin={handleToggleTaskPin}
+                                onDelete={handleDeleteTask}
+                                onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
+                                onToggleSubtask={handleToggleSubtask}
+                              />
+                            ))}
+                          </AnimatePresence>
                         </div>
                       </div>
                     )}
@@ -1992,17 +2100,19 @@ export default function App() {
                           <AlertCircle className="w-3 h-3" /> Overdue Tasks
                         </h4>
                         <div className="space-y-3">
-                          {groupTasks.overdue.map(t => (
-                            <TaskCard
-                              key={t.id}
-                              task={t}
-                              onToggleComplete={handleToggleTaskComplete}
-                              onTogglePin={handleToggleTaskPin}
-                              onDelete={handleDeleteTask}
-                              onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
-                              onToggleSubtask={handleToggleSubtask}
-                            />
-                          ))}
+                          <AnimatePresence>
+                            {groupTasks.overdue.map(t => (
+                              <TaskCard
+                                key={t.id}
+                                task={t}
+                                onToggleComplete={handleToggleTaskComplete}
+                                onTogglePin={handleToggleTaskPin}
+                                onDelete={handleDeleteTask}
+                                onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
+                                onToggleSubtask={handleToggleSubtask}
+                              />
+                            ))}
+                          </AnimatePresence>
                         </div>
                       </div>
                     )}
@@ -2016,17 +2126,19 @@ export default function App() {
                         <p className="text-xs text-slate-400 italic pl-1">No pending tasks for today.</p>
                       ) : (
                         <div className="space-y-3">
-                          {groupTasks.today.map(t => (
-                            <TaskCard
-                              key={t.id}
-                              task={t}
-                              onToggleComplete={handleToggleTaskComplete}
-                              onTogglePin={handleToggleTaskPin}
-                              onDelete={handleDeleteTask}
-                              onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
-                              onToggleSubtask={handleToggleSubtask}
-                            />
-                          ))}
+                          <AnimatePresence>
+                            {groupTasks.today.map(t => (
+                              <TaskCard
+                                key={t.id}
+                                task={t}
+                                onToggleComplete={handleToggleTaskComplete}
+                                onTogglePin={handleToggleTaskPin}
+                                onDelete={handleDeleteTask}
+                                onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
+                                onToggleSubtask={handleToggleSubtask}
+                              />
+                            ))}
+                          </AnimatePresence>
                         </div>
                       )}
                     </div>
@@ -2038,17 +2150,19 @@ export default function App() {
                           Upcoming / Future Agenda
                         </h4>
                         <div className="space-y-3">
-                          {groupTasks.upcoming.map(t => (
-                            <TaskCard
-                              key={t.id}
-                              task={t}
-                              onToggleComplete={handleToggleTaskComplete}
-                              onTogglePin={handleToggleTaskPin}
-                              onDelete={handleDeleteTask}
-                              onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
-                              onToggleSubtask={handleToggleSubtask}
-                            />
-                          ))}
+                          <AnimatePresence>
+                            {groupTasks.upcoming.map(t => (
+                              <TaskCard
+                                key={t.id}
+                                task={t}
+                                onToggleComplete={handleToggleTaskComplete}
+                                onTogglePin={handleToggleTaskPin}
+                                onDelete={handleDeleteTask}
+                                onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
+                                onToggleSubtask={handleToggleSubtask}
+                              />
+                            ))}
+                          </AnimatePresence>
                         </div>
                       </div>
                     )}
@@ -2060,17 +2174,19 @@ export default function App() {
                           Completed Workspace ({groupTasks.completed.length})
                         </h4>
                         <div className="space-y-3">
-                          {groupTasks.completed.map(t => (
-                            <TaskCard
-                              key={t.id}
-                              task={t}
-                              onToggleComplete={handleToggleTaskComplete}
-                              onTogglePin={handleToggleTaskPin}
-                              onDelete={handleDeleteTask}
-                              onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
-                              onToggleSubtask={handleToggleSubtask}
-                            />
-                          ))}
+                          <AnimatePresence>
+                            {groupTasks.completed.map(t => (
+                              <TaskCard
+                                key={t.id}
+                                task={t}
+                                onToggleComplete={handleToggleTaskComplete}
+                                onTogglePin={handleToggleTaskPin}
+                                onDelete={handleDeleteTask}
+                                onEdit={(task) => { setEditingTask(task); setIsCreationOpen(true); }}
+                                onToggleSubtask={handleToggleSubtask}
+                              />
+                            ))}
+                          </AnimatePresence>
                         </div>
                       </div>
                     )}

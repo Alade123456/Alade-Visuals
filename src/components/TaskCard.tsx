@@ -53,8 +53,8 @@ export default function TaskCard({
       layout
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -12 }}
-      transition={{ duration: 0.2 }}
+      exit={task.completed ? { opacity: 0, x: 140, scale: 0.95 } : { opacity: 0, x: -100, scale: 0.95 }}
+      transition={{ type: 'spring', stiffness: 240, damping: 25 }}
       id={`task-card-${task.id}`}
       className={`group relative minimal-card flex items-start space-x-4 border-l-4 transition-all ${
         task.completed 

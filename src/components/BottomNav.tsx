@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, ListTodo, Flame, BarChart3, User, Calendar } from 'lucide-react';
+import { Home, ListTodo, Flame, User } from 'lucide-react';
 
 export type TabId = 'home' | 'tasks' | 'habits' | 'analytics' | 'profile' | 'calendar';
 
@@ -27,8 +27,6 @@ export default function BottomNav({
     { id: 'home', label: 'Home', icon: Home },
     { id: 'tasks', label: 'Tasks', icon: ListTodo, badge: tasksCount },
     { id: 'habits', label: 'Habits', icon: Flame, badge: habitsCount },
-    { id: 'calendar', label: 'Calendar', icon: Calendar },
-    { id: 'analytics', label: 'Charts', icon: BarChart3 },
     { id: 'profile', label: 'Profile', icon: User },
   ];
 
