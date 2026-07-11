@@ -3,7 +3,8 @@ import { motion } from 'motion/react';
 import { 
   Check, Clock, Flag, Pin, Trash2, Edit2, 
   ChevronDown, ChevronUp, ListTodo, Paperclip, AlertCircle,
-  Play, Pause, Square, Coffee, Timer
+  Play, Pause, Square, Coffee, Timer,
+  Briefcase, Heart, BookOpen, Coins, ShoppingCart, User
 } from 'lucide-react';
 import { Task, Priority } from '../types';
 import { formatTimeStr, formatDate } from '../utils';
@@ -16,7 +17,28 @@ interface TaskCardProps {
   onDelete: (id: string) => void;
   onEdit: (task: Task) => void;
   onToggleSubtask: (taskId: string, subtaskId: string) => void;
+  activeFocusTaskId?: string | null;
+  activeFocusTimeLeft?: number;
+  activeFocusTimerMode?: 'idle' | 'work' | 'break';
+  activeFocusTimerStatus?: 'paused' | 'running';
+  onStartFocus?: (taskId: string) => void;
+  onPauseFocus?: () => void;
+  onResumeFocus?: () => void;
+  onStopFocus?: () => void;
 }
+
+const categoryConfigs: Record<string, { icon: React.ComponentType<any>; color: string; bg: string }> = {
+  Work: { icon: Briefcase, color: 'text-indigo-600 dark:text-indigo-400', bg: 'bg-indigo-50 dark:bg-indigo-950/30' },
+  Health: { icon: Heart, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-50 dark:bg-emerald-950/30' },
+  Learning: { icon: BookOpen, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-50 dark:bg-purple-950/30' },
+  Finance: { icon: Coins, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-950/30' },
+  Shopping: { icon: ShoppingCart, color: 'text-pink-600 dark:text-pink-400', bg: 'bg-pink-50 dark:bg-pink-950/30' },
+  Personal: { icon: User, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30' },
+};
+
+const getCategoryConfig = (category: string) => {
+  return categoryConfigs[category] || { icon: ListTodo, color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800/40' };
+};
 
 export default function TaskCard({
   task,
@@ -25,50 +47,38 @@ export default function TaskCard({
   onDelete,
   onEdit,
   onToggleSubtask,
+  activeFocusTaskId,
+  activeFocusTimeLeft,
+  activeFocusTimerMode,
+  activeFocusTimerStatus,
+  onStartFocus,
+  onPauseFocus,
+  onResumeFocus,
+  onStopFocus,
 }: TaskCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const todayStr = formatDate(new Date());
   
-  // Pomodoro Timer State
-  const [timerMode, setTimerMode] = useState<'idle' | 'work' | 'break'>('idle');
-  const [timerStatus, setTimerStatus] = useState<'paused' | 'running'>('paused');
-  const [timeLeft, setTimeLeft] = useState(25 * 60);
-
-  useEffect(() => {
-    let interval: any;
-    if (timerStatus === 'running' && timeLeft > 0) {
-      interval = setInterval(() => {
-        setTimeLeft(prev => prev - 1);
-      }, 1000);
-    } else if (timeLeft === 0) {
-      // Auto-switch mode on complete
-      if (timerMode === 'work') {
-        setTimerMode('break');
-        setTimeLeft(5 * 60); // 5 min break
-        setTimerStatus('paused');
-      } else if (timerMode === 'break') {
-        setTimerMode('work');
-        setTimeLeft(25 * 60);
-        setTimerStatus('paused');
-      }
-    }
-    return () => clearInterval(interval);
-  }, [timerStatus, timeLeft, timerMode]);
+  // Use either the shared active focus timer state or fallback to idle
+  const isCurrentlyFocused = activeFocusTaskId === task.id;
+  const timerMode = isCurrentlyFocused ? (activeFocusTimerMode || 'idle') : 'idle';
+  const timerStatus = isCurrentlyFocused ? (activeFocusTimerStatus || 'paused') : 'paused';
+  const timeLeft = isCurrentlyFocused ? (activeFocusTimeLeft !== undefined ? activeFocusTimeLeft : 25 * 60) : 25 * 60;
 
   const toggleTimer = () => {
-    if (timerMode === 'idle') {
-      setTimerMode('work');
-      setTimeLeft(25 * 60);
-      setTimerStatus('running');
+    if (isCurrentlyFocused) {
+      if (timerStatus === 'running') {
+        onPauseFocus?.();
+      } else {
+        onResumeFocus?.();
+      }
     } else {
-      setTimerStatus(prev => prev === 'running' ? 'paused' : 'running');
+      onStartFocus?.(task.id);
     }
   };
 
   const stopTimer = () => {
-    setTimerMode('idle');
-    setTimerStatus('paused');
-    setTimeLeft(25 * 60);
+    onStopFocus?.();
   };
 
   const formatTimer = (seconds: number) => {
@@ -81,10 +91,10 @@ export default function TaskCard({
   const isToday = task.dueDate === todayStr;
 
   const priorityColors = {
-    Low: 'bg-[#ECFDF5] text-[#059669]',
-    Medium: 'bg-[#FEF3C7] text-[#D97706]',
-    High: 'bg-[#FEE2E2] text-[#DC2626]',
-    Urgent: 'bg-[#FEE2E2] text-[#DC2626]',
+    Low: 'bg-[#ECFDF5] text-[#059669] border border-[#A7F3D0]/30',
+    Medium: 'bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A]/30',
+    High: 'bg-[#FEE2E2] text-[#DC2626] border border-[#FCA5A5]/30',
+    Urgent: 'bg-[#FEE2E2] text-[#DC2626] border border-[#FCA5A5]/40',
   };
 
   const getSubtasksProgress = () => {
@@ -96,20 +106,33 @@ export default function TaskCard({
   };
 
   const progress = getSubtasksProgress();
+  const categoryConfig = getCategoryConfig(task.category);
+  const CategoryIcon = categoryConfig.icon;
 
   return (
     <motion.div
       layout
+      drag="x"
+      dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={{ left: 0.2, right: 0 }}
+      onDragEnd={(e, info) => {
+        if (info.offset.x < -80) {
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate(60);
+          }
+          onDelete(task.id);
+        }
+      }}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       exit={task.completed ? { opacity: 0, x: 140, scale: 0.95 } : { opacity: 0, x: -100, scale: 0.95 }}
       transition={{ type: 'spring', stiffness: 240, damping: 25 }}
       id={`task-card-${task.id}`}
-      className={`group relative minimal-card flex items-start space-x-4 border-l-4 transition-all ${
+      className={`group relative minimal-card border-l-4 transition-all overflow-hidden ${
         task.completed 
-          ? 'bg-gray-50 shadow-none border-green-500 opacity-80 dark:bg-slate-800/50' 
+          ? 'bg-slate-50/50 shadow-none border-green-500 opacity-80 dark:bg-slate-800/30' 
           : timerMode !== 'idle'
-            ? 'border-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/10'
+            ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-900/5'
             : isOverdue 
               ? 'border-red-500' 
               : task.priority === 'High' || task.priority === 'Urgent'
@@ -119,94 +142,90 @@ export default function TaskCard({
                   : 'border-blue-500'
       }`}
     >
-
       <div className="w-full">
-        <div className="p-5 flex items-start gap-4 w-full">
-          {/* Checkbox */}
-          <button
-            id={`btn-toggle-task-${task.id}`}
-            onClick={() => onToggleComplete(task.id)}
-            className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all cursor-pointer ${
-              task.completed
-                ? 'bg-blue-500 border-blue-500 text-white'
-                : 'border-gray-300 hover:border-blue-400'
-            }`}
-          >
-            {task.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-          </button>
+        {/* Compact single horizontal row */}
+        <div className="p-3 px-4 flex items-center justify-between gap-3 w-full">
+          {/* Left block: Checkbox and beautifully-aligned Category Icon */}
+          <div className="flex items-center gap-2.5 shrink-0">
+            <button
+              id={`btn-toggle-task-${task.id}`}
+              onClick={() => onToggleComplete(task.id)}
+              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all cursor-pointer ${
+                task.completed
+                  ? 'bg-blue-500 border-blue-500 text-white shadow-sm shadow-blue-500/20'
+                  : 'border-slate-300 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 bg-white dark:bg-slate-800'
+              }`}
+            >
+              {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
+            </button>
 
-          {/* Main Content Area */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between" onClick={() => setIsExpanded(!isExpanded)}>
+            <div 
+              className={`p-1.5 rounded-lg shrink-0 ${categoryConfig.bg} ${categoryConfig.color} flex items-center justify-center`}
+              title={task.category}
+            >
+              <CategoryIcon className="w-3.5 h-3.5" />
+            </div>
+          </div>
+
+          {/* Middle block: Title, Category Badge, and Date Badge on a clean straight line */}
+          <div className="flex-1 min-w-0 flex items-center justify-between gap-4" onClick={() => setIsExpanded(!isExpanded)}>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
               <h4 
                 id={`task-title-${task.id}`}
-                className={`text-base font-bold tracking-tight cursor-pointer ${
+                className={`text-sm font-bold tracking-tight truncate cursor-pointer select-none transition-colors ${
                   task.completed 
-                    ? 'text-gray-400 line-through dark:text-slate-500' 
-                    : 'text-gray-800 dark:text-slate-100'
+                    ? 'text-slate-400 line-through dark:text-slate-500' 
+                    : 'text-slate-800 dark:text-slate-100'
                 }`}
               >
                 {task.name}
               </h4>
               
-              <div className="flex items-center gap-2">
-                {task.priority !== 'Low' && (
-                  <span className={`px-2 py-1 text-[10px] font-bold uppercase rounded-md ${priorityColors[task.priority]}`}>
-                    {task.priority}
+              {/* Badges inline */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {task.pinned && (
+                  <Pin className="w-3 h-3 text-blue-500 fill-blue-500 transform rotate-45" />
+                )}
+                {isOverdue && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-950/20 px-1 py-0.5 rounded">
+                    <AlertCircle className="w-2.5 h-2.5" />
+                    Overdue
+                  </span>
+                )}
+                {progress && (
+                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/80 px-1.5 py-0.5 rounded">
+                    <ListTodo className="w-2.5 h-2.5" />
+                    {progress.completed}/{progress.total}
                   </span>
                 )}
               </div>
             </div>
-          
-          <p className="text-xs text-gray-400 mt-1 font-medium flex items-center gap-1.5 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
-            {task.completed ? 'Completed' : `Due ${formatTimeStr(task.dueTime)}`} • {task.category}
-            {isOverdue && <span className="text-red-500 flex items-center"><AlertCircle className="w-3 h-3 ml-1 mr-0.5" /> Overdue</span>}
-            {task.pinned && <Pin className="w-3.5 h-3.5 text-blue-500 fill-blue-500 transform rotate-45 ml-1" />}
-          </p>
 
-          {/* Description Preview (if not expanded) */}
-          {task.description && !isExpanded && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-1 cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
-              {task.description}
-            </p>
-          )}
-
-          {/* Pomodoro Timer Inline Display (when running but not expanded) */}
-          {!isExpanded && timerMode !== 'idle' && (
-            <div className="mt-3 inline-flex items-center gap-2 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 px-3 py-1.5 rounded-lg text-xs font-bold">
-              {timerStatus === 'running' ? <Timer className="w-3.5 h-3.5 animate-pulse" /> : <Pause className="w-3.5 h-3.5" />}
-              {formatTimer(timeLeft)} - {timerMode === 'work' ? 'Focusing' : 'Break'}
-            </div>
-          )}
-
-          {/* Badges and details row */}
-          <div className="flex flex-wrap items-center gap-2 mt-2" onClick={() => setIsExpanded(!isExpanded)}>
-            {/* Subtasks Count */}
-            {progress && (
-              <span className="inline-flex items-center gap-1 text-[11px] text-slate-400 dark:text-slate-500 font-semibold bg-slate-50 dark:bg-slate-850 px-1.5 py-0.5 rounded">
-                <ListTodo className="w-3 h-3 text-slate-400" />
-                {progress.completed}/{progress.total} ({progress.pct}%)
+            {/* Badges container on the right side of the straight line */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border flex items-center gap-1 ${
+                isOverdue 
+                  ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400'
+                  : 'bg-slate-50 border-slate-100 text-slate-500 dark:bg-slate-850 dark:border-slate-800 dark:text-slate-400'
+              }`}>
+                <Clock className="w-2.5 h-2.5" />
+                {task.completed ? 'Done' : formatTimeStr(task.dueTime)}
               </span>
-            )}
+
+              {task.priority !== 'Low' && (
+                <span className={`px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider ${priorityColors[task.priority]}`}>
+                  {task.priority}
+                </span>
+              )}
+            </div>
           </div>
 
-            {/* Subtask Mini Progress Bar */}
-            {progress && (
-              <div className="w-full bg-slate-100 dark:bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
-                <div 
-                  className="bg-blue-500 h-full rounded-full transition-all duration-300" 
-                  style={{ width: `${progress.pct}%` }} 
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Quick Action Side Buttons (Always visible on desktop hover, neat toggle on tap) */}
-          <div className="flex items-center gap-1.5 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Right Block: Action buttons (Compact and styled beautifully) */}
+          <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={(e) => { e.stopPropagation(); toggleTimer(); setIsExpanded(true); }}
               title="Focus Timer"
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${timerMode !== 'idle' ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+              className={`p-1 rounded-lg transition-colors cursor-pointer ${timerMode !== 'idle' ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
             >
               <Timer className="w-3.5 h-3.5" />
             </button>
@@ -214,7 +233,7 @@ export default function TaskCard({
               id={`btn-pin-task-${task.id}`}
               onClick={(e) => { e.stopPropagation(); onTogglePin(task.id); }}
               title={task.pinned ? 'Unpin' : 'Pin to top'}
-              className={`p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${task.pinned ? 'text-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
+              className={`p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${task.pinned ? 'text-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
             >
               <Pin className="w-3.5 h-3.5" />
             </button>
@@ -222,7 +241,7 @@ export default function TaskCard({
               id={`btn-edit-task-${task.id}`}
               onClick={(e) => { e.stopPropagation(); onEdit(task); }}
               title="Edit Task"
-              className="p-1.5 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <Edit2 className="w-3.5 h-3.5" />
             </button>
@@ -230,26 +249,36 @@ export default function TaskCard({
               id={`btn-delete-task-${task.id}`}
               onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
               title="Delete Task"
-              className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </button>
             <button
               id={`btn-expand-task-${task.id}`}
               onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
-              className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
             >
               {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
             </button>
           </div>
         </div>
 
+        {/* Mini Bottom Progress Line (Subtle 1px visual cue for completed subtasks) */}
+        {!isExpanded && progress && (
+          <div className="w-full bg-slate-100 dark:bg-slate-800/40 h-[2px] overflow-hidden">
+            <div 
+              className="bg-blue-500 h-full transition-all duration-300" 
+              style={{ width: `${progress.pct}%` }} 
+            />
+          </div>
+        )}
+
         {/* EXPANDED VIEW: Details, Subtasks checklist, and notes */}
         {isExpanded && (
           <motion.div 
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
-            className="mt-1 pt-3 pb-4 border-t border-slate-100 dark:border-slate-800/60 space-y-4 pl-[4.5rem] pr-5 text-slate-700 dark:text-slate-300"
+            className="mt-1 pt-3.5 pb-4 border-t border-slate-100 dark:border-slate-800/60 space-y-4 pl-14 pr-5 text-slate-700 dark:text-slate-300"
           >
             {/* Pomodoro Timer Module */}
             <div className={`p-4 rounded-2xl border transition-colors ${timerMode !== 'idle' ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/50' : 'bg-slate-50 dark:bg-slate-850 border-slate-100 dark:border-slate-800'}`}>

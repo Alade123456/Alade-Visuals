@@ -24,6 +24,11 @@
   }
 }
 
+/* Global Theme Transition Overrides */
+.theme-transitioning * {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease !important;
+}
+
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;

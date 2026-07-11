@@ -5,7 +5,7 @@ import {
   Download, Moon, Sun, Bell, BookOpen, Info, 
   Settings, Award, Flame, CheckCircle, Clock, Pin,
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
-  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check
+  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check, Coffee, Timer, LogOut
 } from 'lucide-react';
 import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval } from './types';
 import { 
@@ -42,16 +42,29 @@ const AVATAR_PRESETS = [
 
 export default function App() {
   // --- AUTH STATE ---
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('aura_auth') === 'true';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
-  const [displayName, setDisplayName] = useState(() => {
-    return localStorage.getItem('aura_local_username') || '';
-  });
-  const [avatarUrl, setAvatarUrl] = useState(() => {
-    return localStorage.getItem('aura_local_avatar') || '';
-  });
+  const [displayName, setDisplayName] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
+
+  // Listen to Firebase Auth state
+  useEffect(() => {
+    import('./lib/firebase').then(({ auth }) => {
+      const unsubscribe = auth.onAuthStateChanged((user) => {
+        if (user) {
+          setIsAuthenticated(true);
+          setDisplayName(user.displayName || 'User');
+          setAvatarUrl(user.photoURL || `preset|👨‍💻|bg-blue-50 dark:bg-blue-950/30 text-blue-600`);
+        } else {
+          setIsAuthenticated(false);
+          setDisplayName('');
+          setAvatarUrl('');
+        }
+        setAuthLoading(false);
+      });
+      return () => unsubscribe();
+    });
+  }, []);
 
   // --- DATA STATE ---
   const loadLocal = (key: string, fallback: any) => {
@@ -90,6 +103,13 @@ export default function App() {
   // Interactive custom notifications/toasts
   const [notification, setNotification] = useState<{ title: string; message: string } | null>(null);
 
+  // --- FOCUS TIMER OVERLAY STATE ---
+  const [activeFocusTaskId, setActiveFocusTaskId] = useState<string | null>(null);
+  const [activeFocusTimerMode, setActiveFocusTimerMode] = useState<'idle' | 'work' | 'break'>('idle');
+  const [activeFocusTimerStatus, setActiveFocusTimerStatus] = useState<'paused' | 'running'>('paused');
+  const [activeFocusTimeLeft, setActiveFocusTimeLeft] = useState(25 * 60);
+  const [showFocusOverlay, setShowFocusOverlay] = useState(false);
+
   // Persist to local storage whenever data changes
   useEffect(() => {
     if (isAuthenticated) {
@@ -103,19 +123,92 @@ export default function App() {
 
   // Synchronize dark mode class
   useEffect(() => {
+    // Add a class to enable global transitions for theme colors
+    document.documentElement.classList.add('theme-transitioning');
+    
     if (preferences.darkMode) {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
     }
+
+    // Remove the global transition class after the transition duration
+    const timeout = setTimeout(() => {
+      document.documentElement.classList.remove('theme-transitioning');
+    }, 300);
+
+    return () => clearTimeout(timeout);
   }, [preferences.darkMode]);
 
+  // Focus Timer Interval
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setAuthLoading(false);
-    }, 1200);
-    return () => clearTimeout(timer);
-  }, []);
+    let interval: any;
+    if (activeFocusTimerStatus === 'running' && activeFocusTimeLeft > 0) {
+      interval = setInterval(() => {
+        setActiveFocusTimeLeft(prev => prev - 1);
+      }, 1000);
+    } else if (activeFocusTimeLeft === 0 && activeFocusTaskId) {
+      // Auto-switch mode on complete
+      if (activeFocusTimerMode === 'work') {
+        setActiveFocusTimerMode('break');
+        setActiveFocusTimeLeft(5 * 60); // 5 min break
+        setActiveFocusTimerStatus('paused');
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate([100, 50, 100, 50, 100]);
+        }
+      } else if (activeFocusTimerMode === 'break') {
+        setActiveFocusTimerMode('work');
+        setActiveFocusTimeLeft(25 * 60); // 25 min work
+        setActiveFocusTimerStatus('paused');
+        if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+          navigator.vibrate([80, 40, 80]);
+        }
+      }
+    }
+    return () => clearInterval(interval);
+  }, [activeFocusTimerStatus, activeFocusTimeLeft, activeFocusTimerMode, activeFocusTaskId]);
+
+  const handleStartFocus = (taskId: string) => {
+    setActiveFocusTaskId(taskId);
+    setActiveFocusTimerMode('work');
+    setActiveFocusTimerStatus('running');
+    setActiveFocusTimeLeft(25 * 60);
+    setShowFocusOverlay(true);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate([80, 40, 80]);
+    }
+  };
+
+  const handlePauseFocus = () => {
+    setActiveFocusTimerStatus('paused');
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(40);
+    }
+  };
+
+  const handleResumeFocus = () => {
+    setActiveFocusTimerStatus('running');
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate(40);
+    }
+  };
+
+  const handleStopFocus = () => {
+    setActiveFocusTaskId(null);
+    setActiveFocusTimerMode('idle');
+    setActiveFocusTimerStatus('paused');
+    setActiveFocusTimeLeft(25 * 60);
+    setShowFocusOverlay(false);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+      navigator.vibrate([40, 100]);
+    }
+  };
+
+  const formatTimer = (seconds: number) => {
+    const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
 
   // Motivational quote selection (stabilized per session/load)
   const [quote] = useState(() => {
@@ -196,11 +289,13 @@ export default function App() {
           origin: { y: 0.6 }
         });
 
-        // Set top floating toast
-        setNotification({
-          title: '🏆 Milestone Unlocked!',
-          message: `${ach.title}: ${ach.description}`,
-        });
+        // Set top floating toast (mutes during active Focus session)
+        if (!activeFocusTaskId) {
+          setNotification({
+            title: '🏆 Milestone Unlocked!',
+            message: `${ach.title}: ${ach.description}`,
+          });
+        }
 
         return {
           ...ach,
@@ -238,7 +333,13 @@ export default function App() {
     }
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      const { auth } = await import('./lib/firebase');
+      await auth.signOut();
+    } catch (error) {
+      console.error('Sign out error:', error);
+    }
     setIsAuthenticated(false);
     localStorage.removeItem('aura_auth');
     localStorage.removeItem('aura_local_username');
@@ -312,6 +413,10 @@ export default function App() {
       if (t.id === id) {
         const isNowCompleted = !t.completed;
         if (isNowCompleted) {
+          // Tactile haptic feedback on completion
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate(100);
+          }
           // Check if it is the first task completed today
           const completedToday = tasks.some(task => task.completed && task.completedAt && task.completedAt.startsWith(todayStr));
           const lastConfettiDate = localStorage.getItem('aura_last_confetti_date');
@@ -319,6 +424,11 @@ export default function App() {
           if (!completedToday && lastConfettiDate !== todayStr) {
             triggeredConfetti = true;
             localStorage.setItem('aura_last_confetti_date', todayStr);
+          }
+        } else {
+          // Short discrete haptic feedback on unchecking
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate(40);
           }
         }
         return { 
@@ -366,7 +476,16 @@ export default function App() {
   const handleToggleSubtask = (taskId: string, subtaskId: string) => {
     setTasks(prev => prev.map(t => {
       if (t.id === taskId) {
-        const subtasks = t.subtasks.map(s => s.id === subtaskId ? { ...s, completed: !s.completed } : s);
+        const subtasks = t.subtasks.map(s => {
+          if (s.id === subtaskId) {
+            const isNowCompleted = !s.completed;
+            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+              navigator.vibrate(isNowCompleted ? 60 : 30);
+            }
+            return { ...s, completed: isNowCompleted };
+          }
+          return s;
+        });
         return { ...t, subtasks };
       }
       return t;
@@ -381,8 +500,14 @@ export default function App() {
         
         if (hasLoggedToday) {
           delete history[todayStr];
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate(40);
+          }
         } else {
           history[todayStr] = true;
+          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+            navigator.vibrate([80, 40, 80]); // Snappy double pulse for logging a habit
+          }
         }
 
         // Calculate current streak
@@ -623,6 +748,14 @@ export default function App() {
               onDelete={handleDeleteTask}
               onEdit={handleEditTask}
               onToggleSubtask={handleToggleSubtask}
+              activeFocusTaskId={activeFocusTaskId}
+              activeFocusTimeLeft={activeFocusTimeLeft}
+              activeFocusTimerMode={activeFocusTimerMode}
+              activeFocusTimerStatus={activeFocusTimerStatus}
+              onStartFocus={handleStartFocus}
+              onPauseFocus={handlePauseFocus}
+              onResumeFocus={handleResumeFocus}
+              onStopFocus={handleStopFocus}
             />
           ))}
           {tasksForToday.length === 0 && (
@@ -722,6 +855,14 @@ export default function App() {
             onDelete={handleDeleteTask}
             onEdit={handleEditTask}
             onToggleSubtask={handleToggleSubtask}
+            activeFocusTaskId={activeFocusTaskId}
+            activeFocusTimeLeft={activeFocusTimeLeft}
+            activeFocusTimerMode={activeFocusTimerMode}
+            activeFocusTimerStatus={activeFocusTimerStatus}
+            onStartFocus={handleStartFocus}
+            onPauseFocus={handlePauseFocus}
+            onResumeFocus={handleResumeFocus}
+            onStopFocus={handleStopFocus}
           />
         ))}
         {sortedTasks.length === 0 && (
@@ -885,6 +1026,21 @@ export default function App() {
               </div>
             </div>
 
+            {/* Account Settings */}
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-750/50 space-y-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                Account Management
+              </span>
+              
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
+            </div>
+
             {/* Clean start */}
             {isConfirmingReset ? (
               <div className="w-full p-4 bg-rose-50 dark:bg-rose-950/20 rounded-2xl border border-rose-200 dark:border-rose-900/50 space-y-3">
@@ -1037,17 +1193,258 @@ export default function App() {
       </main>
 
       {/* Floating Create Button */}
-      <div className="fixed bottom-22 left-1/2 transform -translate-x-1/2 z-30">
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-1.5 px-6 py-3.5 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg shadow-blue-500/25 font-bold tracking-wide text-xs cursor-pointer"
-        >
-          <Plus size={16} className="stroke-[3]" />
-          Create Goal
-        </motion.button>
-      </div>
+      {!activeFocusTaskId && (
+        <div className="fixed bottom-22 left-1/2 transform -translate-x-1/2 z-30">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-1.5 px-6 py-3.5 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg shadow-blue-500/25 font-bold tracking-wide text-xs cursor-pointer"
+          >
+            <Plus size={16} className="stroke-[3]" />
+            Create Goal
+          </motion.button>
+        </div>
+      )}
+
+      {/* Floating Focus Bar (when minimized) */}
+      <AnimatePresence>
+        {activeFocusTaskId && !showFocusOverlay && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.95 }}
+            onClick={() => setShowFocusOverlay(true)}
+            className="fixed bottom-22 left-4 right-4 md:left-1/2 md:right-auto md:w-full md:max-w-md md:-translate-x-1/2 z-40 bg-indigo-600 dark:bg-indigo-700 text-white rounded-2xl p-3 px-4 shadow-xl shadow-indigo-600/20 flex items-center justify-between cursor-pointer border border-indigo-500 hover:bg-indigo-500 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Timer className={`w-5 h-5 ${activeFocusTimerStatus === 'running' ? 'animate-pulse' : ''}`} />
+                {activeFocusTimerStatus === 'running' && (
+                  <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold text-indigo-200 uppercase tracking-wider">
+                  {activeFocusTimerMode === 'work' ? 'Focusing Task' : 'Break Time'}
+                </div>
+                <div className="text-xs font-bold truncate pr-2">
+                  {tasks.find(t => t.id === activeFocusTaskId)?.name || 'Active Task'}
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-sm font-bold bg-indigo-700/60 dark:bg-indigo-800/60 px-2.5 py-1 rounded-lg">
+                {formatTimer(activeFocusTimeLeft)}
+              </span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleStopFocus();
+                }}
+                className="p-1.5 hover:bg-red-500 hover:text-white rounded-lg transition-colors cursor-pointer"
+                title="Stop Focus"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Immersive Focus Timer Overlay */}
+      <AnimatePresence>
+        {activeFocusTaskId && showFocusOverlay && (
+          (() => {
+            const focusedTask = tasks.find(t => t.id === activeFocusTaskId);
+            if (!focusedTask) return null;
+            
+            // Calculate progress circle stroke
+            const totalDuration = activeFocusTimerMode === 'work' ? 25 * 60 : 5 * 60;
+            const percentage = (activeFocusTimeLeft / totalDuration) * 100;
+            const radius = 90;
+            const circumference = 2 * Math.PI * radius;
+            const strokeDashoffset = circumference - (percentage / 100) * circumference;
+
+            return (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 bg-slate-950/95 backdrop-blur-xl z-50 flex flex-col items-center justify-between p-6 overflow-y-auto"
+              >
+                {/* Glow ambient effects */}
+                <div className="absolute top-1/4 left-1/4 w-72 h-72 rounded-full bg-indigo-500/10 blur-3xl -z-10 animate-pulse pointer-events-none" />
+                <div className="absolute bottom-1/4 right-1/4 w-72 h-72 rounded-full bg-blue-500/10 blur-3xl -z-10 animate-pulse pointer-events-none" />
+
+                {/* Top Bar */}
+                <div className="w-full max-w-lg flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-2 bg-slate-900/60 border border-slate-800 px-4 py-1.5 rounded-full text-[11px] font-bold text-slate-300">
+                    <span className="flex h-2 w-2 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                    </span>
+                    <span>🔇 Focus Mode Active (DND Enabled)</span>
+                  </div>
+                  <button
+                    onClick={() => setShowFocusOverlay(false)}
+                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-900/60 border border-transparent hover:border-slate-800 rounded-full transition-all cursor-pointer animate-none"
+                    title="Minimize"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                {/* Center Content: Timer and Task Card */}
+                <div className="w-full max-w-lg flex-1 flex flex-col items-center justify-center py-8 gap-8">
+                  
+                  {/* Circular Timer Display */}
+                  <div className="relative flex items-center justify-center w-56 h-56">
+                    <svg className="w-full h-full transform -rotate-90">
+                      {/* Background track */}
+                      <circle
+                        cx="112"
+                        cy="112"
+                        r={radius}
+                        className="stroke-slate-800/60"
+                        strokeWidth="8"
+                        fill="transparent"
+                      />
+                      {/* Active progress */}
+                      <motion.circle
+                        cx="112"
+                        cy="112"
+                        r={radius}
+                        className={activeFocusTimerMode === 'work' ? 'stroke-indigo-500 shadow-lg' : 'stroke-emerald-500 shadow-lg'}
+                        strokeWidth="8"
+                        fill="transparent"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                        transition={{ duration: 1, ease: 'linear' }}
+                      />
+                    </svg>
+
+                    {/* Timer digits overlay */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                      <span className={`text-4xl md:text-5xl font-mono font-black tracking-widest ${activeFocusTimerMode === 'work' ? 'text-indigo-400' : 'text-emerald-400'}`}>
+                        {formatTimer(activeFocusTimeLeft)}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                        {activeFocusTimerMode === 'work' ? 'Focus Session' : 'Short Break'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Highlighted Task Card Wrapper */}
+                  <div className="w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden ring-2 ring-indigo-500/30">
+                    <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500" />
+                    
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <span className="inline-flex items-center gap-1 text-[10px] uppercase font-black tracking-widest text-indigo-400 bg-indigo-950/40 px-2 py-0.5 rounded-md mb-2">
+                          {focusedTask.category}
+                        </span>
+                        <h2 className="text-lg font-black text-white tracking-tight leading-snug">
+                          {focusedTask.name}
+                        </h2>
+                        {focusedTask.description && (
+                          <p className="text-xs text-slate-400 mt-2 leading-relaxed">
+                            {focusedTask.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Subtasks checklist within focus overlay */}
+                    {focusedTask.subtasks && focusedTask.subtasks.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-slate-800/60 space-y-2">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
+                          Subtasks checklist ({focusedTask.subtasks.filter(s => s.completed).length}/{focusedTask.subtasks.length})
+                        </span>
+                        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                          {focusedTask.subtasks.map(sub => (
+                            <div 
+                              key={sub.id} 
+                              className="flex items-center gap-2 hover:bg-slate-800/40 p-1.5 rounded-lg transition-colors"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleToggleSubtask(focusedTask.id, sub.id)}
+                                className={`flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-md border transition-all cursor-pointer ${
+                                  sub.completed
+                                    ? 'bg-indigo-500 border-indigo-500 text-white'
+                                    : 'border-slate-700 hover:border-slate-500 bg-slate-950'
+                                }`}
+                              >
+                                {sub.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                              </button>
+                              <span className={`text-xs ${sub.completed ? 'text-slate-500 line-through' : 'text-slate-300'}`}>
+                                {sub.name}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {focusedTask.notes && (
+                      <div className="mt-4 p-3 bg-slate-950/60 rounded-xl border border-slate-800/60">
+                        <span className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Quick Notes</span>
+                        <p className="text-xs text-slate-400 mt-1 whitespace-pre-line">{focusedTask.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Bottom Control Buttons */}
+                <div className="w-full max-w-lg flex flex-col gap-3 mb-4">
+                  <div className="flex gap-3 justify-center">
+                    {/* Pause/Resume Button */}
+                    <button
+                      onClick={activeFocusTimerStatus === 'running' ? handlePauseFocus : handleResumeFocus}
+                      className={`flex-1 py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer ${
+                        activeFocusTimerStatus === 'running' 
+                          ? 'bg-amber-500 hover:bg-amber-600 text-slate-950' 
+                          : 'bg-indigo-500 hover:bg-indigo-600 text-white'
+                      }`}
+                    >
+                      {activeFocusTimerStatus === 'running' ? (
+                        <><Pause className="w-4 h-4 fill-current" /> Pause Focus</>
+                      ) : (
+                        <><Play className="w-4 h-4 fill-current" /> Resume Focus</>
+                      )}
+                    </button>
+
+                    {/* Complete Task Button */}
+                    <button
+                      onClick={() => {
+                        handleToggleTask(focusedTask.id);
+                        handleStopFocus();
+                      }}
+                      className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3.5 rounded-2xl font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md cursor-pointer"
+                    >
+                      <Check className="w-4 h-4 stroke-[3]" /> Complete Task
+                    </button>
+                  </div>
+
+                  {/* Stop Focus Button */}
+                  <button
+                    onClick={handleStopFocus}
+                    className="w-full bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-red-400 py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer border border-slate-800 hover:border-slate-700"
+                  >
+                    <Square className="w-3.5 h-3.5 fill-current" /> End Focus Session
+                  </button>
+                </div>
+              </motion.div>
+            );
+          })()
+        )}
+      </AnimatePresence>
 
       {/* Bottom Floating Navigation Bar */}
       <BottomNav 
