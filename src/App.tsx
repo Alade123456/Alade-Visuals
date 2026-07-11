@@ -5,7 +5,7 @@ import {
   Download, Moon, Sun, Bell, BookOpen, Info, 
   Settings, Award, Flame, CheckCircle, Clock, Pin,
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
-  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check, Coffee, Timer, LogOut
+  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check, Coffee, Timer
 } from 'lucide-react';
 import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval } from './types';
 import { 
@@ -42,28 +42,22 @@ const AVATAR_PRESETS = [
 
 export default function App() {
   // --- AUTH STATE ---
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('aura_auth') === 'true';
+  });
   const [authLoading, setAuthLoading] = useState(true);
-  const [displayName, setDisplayName] = useState('');
-  const [avatarUrl, setAvatarUrl] = useState('');
+  const [displayName, setDisplayName] = useState(() => {
+    return localStorage.getItem('aura_local_username') || '';
+  });
+  const [avatarUrl, setAvatarUrl] = useState(() => {
+    return localStorage.getItem('aura_local_avatar') || '';
+  });
 
-  // Listen to Firebase Auth state
   useEffect(() => {
-    import('./lib/firebase').then(({ auth }) => {
-      const unsubscribe = auth.onAuthStateChanged((user) => {
-        if (user) {
-          setIsAuthenticated(true);
-          setDisplayName(user.displayName || 'User');
-          setAvatarUrl(user.photoURL || `preset|👨‍💻|bg-blue-50 dark:bg-blue-950/30 text-blue-600`);
-        } else {
-          setIsAuthenticated(false);
-          setDisplayName('');
-          setAvatarUrl('');
-        }
-        setAuthLoading(false);
-      });
-      return () => unsubscribe();
-    });
+    const timer = setTimeout(() => {
+      setAuthLoading(false);
+    }, 1200);
+    return () => clearTimeout(timer);
   }, []);
 
   // --- DATA STATE ---
@@ -331,31 +325,6 @@ export default function App() {
       setTasks(getInitialTasks());
       setHabits(getInitialHabits());
     }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      const { auth } = await import('./lib/firebase');
-      await auth.signOut();
-    } catch (error) {
-      console.error('Sign out error:', error);
-    }
-    setIsAuthenticated(false);
-    localStorage.removeItem('aura_auth');
-    localStorage.removeItem('aura_local_username');
-    localStorage.removeItem('aura_local_avatar');
-    localStorage.removeItem('aura_last_confetti_date');
-    localStorage.removeItem('aura_tasks');
-    localStorage.removeItem('aura_habits');
-    localStorage.removeItem('aura_categories');
-    localStorage.removeItem('aura_achievements');
-    localStorage.removeItem('aura_preferences');
-    setTasks([]);
-    setHabits([]);
-    setAchievements(INITIAL_ACHIEVEMENTS);
-    setPreferences(DEFAULT_PREFERENCES);
-    setAvatarUrl('');
-    setDisplayName('');
   };
 
   const handleResetData = () => {
@@ -1024,21 +993,6 @@ export default function App() {
                   />
                 </button>
               </div>
-            </div>
-
-            {/* Account Settings */}
-            <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-750/50 space-y-4">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
-                Account Management
-              </span>
-              
-              <button
-                onClick={handleSignOut}
-                className="w-full flex items-center justify-center gap-2 py-3 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
-              >
-                <LogOut className="w-4 h-4" />
-                Sign Out
-              </button>
             </div>
 
             {/* Clean start */}
