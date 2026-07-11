@@ -5,7 +5,7 @@ import {
   Download, Moon, Sun, Bell, BookOpen, Info, 
   Settings, Award, Flame, CheckCircle, Clock, Pin,
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
-  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check, Coffee, Timer
+  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check, Coffee, Timer, LogOut
 } from 'lucide-react';
 import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval } from './types';
 import { 
@@ -42,9 +42,7 @@ const AVATAR_PRESETS = [
 
 export default function App() {
   // --- AUTH STATE ---
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('aura_auth') === 'true';
-  });
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [displayName, setDisplayName] = useState(() => {
     return localStorage.getItem('aura_local_username') || '';
@@ -54,10 +52,19 @@ export default function App() {
   });
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setAuthLoading(false);
-    }, 1200);
-    return () => clearTimeout(timer);
+    // Import supabase dynamically or import it at the top
+    import('./supabaseClient').then(({ supabase }) => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        setIsAuthenticated(!!session);
+        setAuthLoading(false);
+      });
+
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        setIsAuthenticated(!!session);
+      });
+
+      return () => subscription.unsubscribe();
+    });
   }, []);
 
   // --- DATA STATE ---
@@ -320,11 +327,12 @@ export default function App() {
     localStorage.setItem('aura_local_username', username);
     if (avatar) localStorage.setItem('aura_local_avatar', avatar);
     
-    // Default mock data seed on first signin
-    if (!localStorage.getItem('aura_tasks')) {
-      setTasks(getInitialTasks());
-      setHabits(getInitialHabits());
-    }
+    // Reload state from local storage or set defaults
+    setTasks(loadLocal('aura_tasks', getInitialTasks()));
+    setHabits(loadLocal('aura_habits', getInitialHabits()));
+    setCategories(loadLocal('aura_categories', DEFAULT_CATEGORIES));
+    setAchievements(loadLocal('aura_achievements', INITIAL_ACHIEVEMENTS));
+    setPreferences(loadLocal('aura_preferences', DEFAULT_PREFERENCES));
   };
 
   const handleResetData = () => {
@@ -339,6 +347,23 @@ export default function App() {
       title: 'Data Reset',
       message: 'App statistics, tasks, and habits have been reset to 0.',
     });
+  };
+
+  const handleSignOut = async () => {
+    try {
+      const { supabase } = await import('./supabaseClient');
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error(e);
+    }
+    setIsAuthenticated(false);
+    localStorage.removeItem('aura_auth');
+    setTasks([]);
+    setHabits([]);
+    setAchievements(INITIAL_ACHIEVEMENTS);
+    setPreferences(DEFAULT_PREFERENCES);
+    setAvatarUrl('');
+    setDisplayName('');
   };
 
   const handleSaveName = () => {
@@ -993,6 +1018,21 @@ export default function App() {
                   />
                 </button>
               </div>
+            </div>
+
+            {/* Account Management */}
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-750/50 space-y-4">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                Account Management
+              </span>
+              
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 py-3 bg-slate-100 dark:bg-slate-700/50 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
             </div>
 
             {/* Clean start */}
