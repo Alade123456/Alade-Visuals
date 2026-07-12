@@ -1023,7 +1023,7 @@ export default function App() {
       )}
 
       {/* Today's Tasks Summary List */}
-      <div className="space-y-4">
+      <div className="space-y-4 relative z-[60] bg-slate-50/80 dark:bg-slate-950/80 backdrop-blur-xl p-4 -mx-4 rounded-3xl border border-slate-200/50 dark:border-slate-800/50">
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
             <Clock size={16} className="text-slate-400" /> Today's Focus List
