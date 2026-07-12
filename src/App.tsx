@@ -1949,7 +1949,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Main Tab Routing */}
-      <main className="max-w-xl mx-auto bg-slate-50/50 dark:bg-slate-950/50 min-h-screen relative shadow-sm">
+      <main className="max-w-xl mx-auto bg-slate-50/50 dark:bg-slate-950/50 min-h-screen relative shadow-sm pb-48">
         {activeTab === 'home' && renderHome()}
         {activeTab === 'tasks' && renderTasks()}
         {activeTab === 'habits' && renderHabits()}

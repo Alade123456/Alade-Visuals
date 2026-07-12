@@ -374,8 +374,57 @@ export default function TaskCard({
             animate={{ height: 'auto', opacity: 1 }}
             className="mt-1 pt-3.5 pb-4 border-t border-slate-100 dark:border-slate-800/60 space-y-4 pl-14 pr-5 text-slate-700 dark:text-slate-300"
           >
-            {/* Pomodoro Timer Module */}
-            <div className={`p-4 rounded-2xl border transition-colors ${timerMode !== 'idle' ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/50' : 'bg-slate-50 dark:bg-slate-850 border-slate-100 dark:border-slate-800'}`}>
+            {/* Extended Description */}
+            {task.description && (
+              <div className="space-y-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">Description</span>
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{task.description}</p>
+              </div>
+            )}
+
+            {/* Subtasks interactive list */}
+            {task.subtasks && task.subtasks.length > 0 && (
+              <div className="space-y-1.5 mt-4">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider block">Subtasks Checklist</span>
+                <div className="space-y-1.5">
+                  {task.subtasks.map((sub) => (
+                    <div 
+                      key={sub.id} 
+                      className="flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-850 p-1.5 rounded-lg transition-colors"
+                    >
+                      <button
+                        id={`btn-subtask-${task.id}-${sub.id}`}
+                        type="button"
+                        onClick={() => onToggleSubtask(task.id, sub.id)}
+                        className={`flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-md border transition-all cursor-pointer ${
+                          sub.completed
+                            ? 'bg-blue-500 border-blue-500 text-white'
+                            : 'border-slate-300 dark:border-slate-600 hover:border-slate-400'
+                        }`}
+                      >
+                        {sub.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                      </button>
+                      <span className={`text-xs ${sub.completed ? 'text-slate-400 line-through dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
+                        {sub.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Notes Section */}
+            {task.notes && (
+              <div className="space-y-0.5 bg-slate-50 dark:bg-slate-850/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 mt-4">
+                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider flex items-center gap-1">
+                  <Paperclip className="w-3 h-3" /> Quick Notes
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-line mt-0.5">{task.notes}</p>
+              </div>
+            )}
+
+            {/* Pomodoro Timer Module (Moved to bottom) */}
+            <div className={`mt-4 p-4 rounded-2xl border transition-colors ${timerMode !== 'idle' ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/50' : 'bg-slate-50 dark:bg-slate-850 border-slate-100 dark:border-slate-800'}`}>
               <div className="flex items-center justify-between mb-3">
                 <span className={`text-[10px] uppercase font-bold tracking-wider flex items-center gap-1.5 ${timerMode !== 'idle' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500'}`}>
                   {timerMode === 'work' ? <Timer className="w-3 h-3" /> : timerMode === 'break' ? <Coffee className="w-3 h-3" /> : <Timer className="w-3 h-3" />}
@@ -426,55 +475,6 @@ export default function TaskCard({
                 </div>
               )}
             </div>
-
-            {/* Extended Description */}
-            {task.description && (
-              <div className="space-y-0.5">
-                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider">Description</span>
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">{task.description}</p>
-              </div>
-            )}
-
-            {/* Subtasks interactive list */}
-            {task.subtasks && task.subtasks.length > 0 && (
-              <div className="space-y-1.5 mt-4">
-                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider block">Subtasks Checklist</span>
-                <div className="space-y-1.5">
-                  {task.subtasks.map((sub) => (
-                    <div 
-                      key={sub.id} 
-                      className="flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-850 p-1.5 rounded-lg transition-colors"
-                    >
-                      <button
-                        id={`btn-subtask-${task.id}-${sub.id}`}
-                        type="button"
-                        onClick={() => onToggleSubtask(task.id, sub.id)}
-                        className={`flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-md border transition-all cursor-pointer ${
-                          sub.completed
-                            ? 'bg-blue-500 border-blue-500 text-white'
-                            : 'border-slate-300 dark:border-slate-600 hover:border-slate-400'
-                        }`}
-                      >
-                        {sub.completed && <Check className="w-3 h-3 stroke-[3]" />}
-                      </button>
-                      <span className={`text-xs ${sub.completed ? 'text-slate-400 line-through dark:text-slate-500' : 'text-slate-700 dark:text-slate-300'}`}>
-                        {sub.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Notes Section */}
-            {task.notes && (
-              <div className="space-y-0.5 bg-slate-50 dark:bg-slate-850/50 p-2.5 rounded-xl border border-slate-100 dark:border-slate-800 mt-4">
-                <span className="text-[10px] uppercase font-bold text-slate-400 dark:text-slate-500 tracking-wider flex items-center gap-1">
-                  <Paperclip className="w-3 h-3" /> Quick Notes
-                </span>
-                <p className="text-xs text-slate-500 dark:text-slate-400 whitespace-pre-line mt-0.5">{task.notes}</p>
-              </div>
-            )}
 
             {/* Metadata Footer */}
             <div className="flex justify-between items-center text-[10px] text-slate-400 dark:text-slate-500 pt-3 border-t border-slate-100 dark:border-slate-800 mt-4">
