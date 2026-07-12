@@ -26,6 +26,8 @@ import TaskCreationModal from './components/TaskCreationModal';
 import SignIn from './components/SignIn';
 import AnimatedCounter from './components/AnimatedCounter';
 import confetti from 'canvas-confetti';
+import { useSupabaseArraySync, useSupabaseObjectSync } from './useSupabaseSync';
+import { useTaskReminders } from './useTaskReminders';
 
 const AVATAR_PRESETS = [
   { emoji: '👨‍💻', label: 'Coder', bg: 'bg-blue-50 dark:bg-blue-950/30 text-blue-600' },
@@ -178,6 +180,17 @@ export default function App() {
   const [activeFocusTimerStatus, setActiveFocusTimerStatus] = useState<'paused' | 'running'>('paused');
   const [activeFocusTimeLeft, setActiveFocusTimeLeft] = useState(25 * 60);
   const [showFocusOverlay, setShowFocusOverlay] = useState(false);
+
+  // Sync to Supabase in real-time while preserving optimistic UI
+  useSupabaseArraySync('tasks', tasks, setTasks, isAuthenticated);
+  useSupabaseArraySync('habits', habits, setHabits, isAuthenticated);
+  useSupabaseArraySync('categories', categories, setCategories, isAuthenticated);
+  useSupabaseArraySync('achievements', achievements, setAchievements, isAuthenticated);
+  useSupabaseArraySync('notes', notes, setNotes, isAuthenticated);
+  useSupabaseObjectSync('preferences', preferences, setPreferences, isAuthenticated);
+
+  // Initialize task reminders notification check
+  useTaskReminders(tasks);
 
   // Persist to local storage whenever data changes
   useEffect(() => {
@@ -1023,26 +1036,36 @@ export default function App() {
           </button>
         </div>
         <div className="space-y-3">
-          {tasksForToday.slice(0, 3).map(task => (
-            <TaskCard 
-              key={task.id}
-              task={task}
-              onToggleComplete={handleToggleTask}
-              onTogglePin={handleTogglePin}
-              onDelete={handleDeleteTask}
-              onEdit={handleEditTask}
-              onToggleSubtask={handleToggleSubtask}
-              categories={categories}
-              activeFocusTaskId={activeFocusTaskId}
-              activeFocusTimeLeft={activeFocusTimeLeft}
-              activeFocusTimerMode={activeFocusTimerMode}
-              activeFocusTimerStatus={activeFocusTimerStatus}
-              onStartFocus={handleStartFocus}
-              onPauseFocus={handlePauseFocus}
-              onResumeFocus={handleResumeFocus}
-              onStopFocus={handleStopFocus}
-            />
-          ))}
+          <AnimatePresence mode="popLayout">
+            {tasksForToday.slice(0, 3).map(task => (
+              <motion.div
+                key={task.id}
+                layout
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+              >
+                <TaskCard 
+                  task={task}
+                  onToggleComplete={handleToggleTask}
+                  onTogglePin={handleTogglePin}
+                  onDelete={handleDeleteTask}
+                  onEdit={handleEditTask}
+                  onToggleSubtask={handleToggleSubtask}
+                  categories={categories}
+                  activeFocusTaskId={activeFocusTaskId}
+                  activeFocusTimeLeft={activeFocusTimeLeft}
+                  activeFocusTimerMode={activeFocusTimerMode}
+                  activeFocusTimerStatus={activeFocusTimerStatus}
+                  onStartFocus={handleStartFocus}
+                  onPauseFocus={handlePauseFocus}
+                  onResumeFocus={handleResumeFocus}
+                  onStopFocus={handleStopFocus}
+                />
+              </motion.div>
+            ))}
+          </AnimatePresence>
           {tasksForToday.length === 0 && (
             <div className="p-8 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-150 dark:border-slate-750">
               No tasks for today. Tap "Create New" to schedule something!
@@ -1268,26 +1291,36 @@ export default function App() {
 
       {/* Main Filtered List */}
       <div className="space-y-3">
-        {sortedTasks.map(task => (
-          <TaskCard 
-            key={task.id}
-            task={task}
-            onToggleComplete={handleToggleTask}
-            onTogglePin={handleTogglePin}
-            onDelete={handleDeleteTask}
-            onEdit={handleEditTask}
-            onToggleSubtask={handleToggleSubtask}
-            categories={categories}
-            activeFocusTaskId={activeFocusTaskId}
-            activeFocusTimeLeft={activeFocusTimeLeft}
-            activeFocusTimerMode={activeFocusTimerMode}
-            activeFocusTimerStatus={activeFocusTimerStatus}
-            onStartFocus={handleStartFocus}
-            onPauseFocus={handlePauseFocus}
-            onResumeFocus={handleResumeFocus}
-            onStopFocus={handleStopFocus}
-          />
-        ))}
+        <AnimatePresence mode="popLayout">
+          {sortedTasks.map(task => (
+            <motion.div
+              key={task.id}
+              layout
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+            >
+              <TaskCard 
+                task={task}
+                onToggleComplete={handleToggleTask}
+                onTogglePin={handleTogglePin}
+                onDelete={handleDeleteTask}
+                onEdit={handleEditTask}
+                onToggleSubtask={handleToggleSubtask}
+                categories={categories}
+                activeFocusTaskId={activeFocusTaskId}
+                activeFocusTimeLeft={activeFocusTimeLeft}
+                activeFocusTimerMode={activeFocusTimerMode}
+                activeFocusTimerStatus={activeFocusTimerStatus}
+                onStartFocus={handleStartFocus}
+                onPauseFocus={handlePauseFocus}
+                onResumeFocus={handleResumeFocus}
+                onStopFocus={handleStopFocus}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
         {tasks.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, y: 15 }}
@@ -1364,17 +1397,27 @@ export default function App() {
         <p className="text-slate-500 dark:text-slate-400 text-xs mt-0.5">Consistency builds character. Log your systems daily.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {habits.map(habit => (
-          <HabitCard 
-            key={habit.id}
-            habit={habit}
-            onToggleToday={handleLogHabit}
-            onPause={handleTogglePause}
-            onDelete={handleDeleteHabit}
-            onDuplicate={() => {}}
-          />
-        ))}
+      <motion.div layout className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <AnimatePresence mode="popLayout">
+          {habits.map(habit => (
+            <motion.div
+              key={habit.id}
+              layout
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.2 }}
+            >
+              <HabitCard 
+                habit={habit}
+                onToggleToday={handleLogHabit}
+                onPause={handleTogglePause}
+                onDelete={handleDeleteHabit}
+                onDuplicate={() => {}}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
         {habits.length === 0 && (
           <motion.div
             initial={{ opacity: 0, y: 15 }}
@@ -1409,7 +1452,7 @@ export default function App() {
             </button>
           </motion.div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 

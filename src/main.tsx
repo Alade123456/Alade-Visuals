@@ -1,6 +1,7 @@
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
+import { AuthCallback } from './AuthCallback.tsx';
 import './index.css';
 
 // Intercept OAuth callback if running inside a popup
@@ -10,11 +11,13 @@ if (window.opener && (window.location.hash.includes('access_token=') || window.l
     hash: window.location.hash,
     search: window.location.search
   }, window.location.origin);
-  window.close();
+  // Optional: keep this fallback just in case
 }
+
+const isAuthCallback = window.location.pathname === '/auth-callback';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {isAuthCallback ? <AuthCallback /> : <App />}
   </StrictMode>,
 );

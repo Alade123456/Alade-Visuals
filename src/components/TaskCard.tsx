@@ -184,123 +184,176 @@ export default function TaskCard({
       }`}
     >
       <div className="w-full">
-        {/* Compact single horizontal row */}
-        <div className="p-3 px-4 flex items-center justify-between gap-3 w-full">
-          {/* Left block: Checkbox and beautifully-aligned Category Icon */}
-          <div className="flex items-center gap-2.5 shrink-0">
-            <button
-              id={`btn-toggle-task-${task.id}`}
-              onClick={() => onToggleComplete(task.id)}
-              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all cursor-pointer ${
-                task.completed
-                  ? 'bg-blue-500 border-blue-500 text-white shadow-sm shadow-blue-500/20'
-                  : 'border-slate-300 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 bg-white dark:bg-slate-800'
-              }`}
-            >
-              {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
-            </button>
-
-            <div 
-              className={`p-1.5 rounded-lg shrink-0 ${categoryConfig.bg} ${categoryConfig.color} flex items-center justify-center`}
-              title={task.category}
-            >
-              <CategoryIcon className="w-3.5 h-3.5" />
-            </div>
-          </div>
-
-          {/* Middle block: Title, Category Badge, and Date Badge on a clean straight line */}
-          <div className="flex-1 min-w-0 flex items-center justify-between gap-4" onClick={() => setIsExpanded(!isExpanded)}>
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <h4 
-                id={`task-title-${task.id}`}
-                className={`text-sm font-bold tracking-tight truncate cursor-pointer select-none transition-colors ${
+        {/* Responsive layout: row on desktop, actions in a beautiful footer row on mobile */}
+        <div className="flex flex-col w-full">
+          <div className="p-3 px-4 flex items-center justify-between gap-3 w-full">
+            {/* Left block: Checkbox and beautifully-aligned Category Icon */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              <button
+                id={`btn-toggle-task-${task.id}`}
+                onClick={() => onToggleComplete(task.id)}
+                className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all cursor-pointer ${
                   task.completed 
-                    ? 'text-slate-400 line-through dark:text-slate-500' 
-                    : 'text-slate-800 dark:text-slate-100'
+                    ? 'bg-blue-500 border-blue-500 text-white shadow-sm shadow-blue-500/20' 
+                    : 'border-slate-300 dark:border-slate-700 hover:border-blue-400 dark:hover:border-blue-500 bg-white dark:bg-slate-800'
                 }`}
               >
-                {task.name}
-              </h4>
-              
-              {/* Badges inline */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {task.pinned && (
-                  <Pin className="w-3 h-3 text-blue-500 fill-blue-500 transform rotate-45" />
-                )}
-                {isOverdue && (
-                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-950/20 px-1 py-0.5 rounded">
-                    <AlertCircle className="w-2.5 h-2.5" />
-                    Overdue
-                  </span>
-                )}
-                {progress && (
-                  <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/80 px-1.5 py-0.5 rounded">
-                    <ListTodo className="w-2.5 h-2.5" />
-                    {progress.completed}/{progress.total}
+                {task.completed && <Check className="w-3 h-3 stroke-[3]" />}
+              </button>
+
+              <div 
+                className={`p-1.5 rounded-lg shrink-0 ${categoryConfig.bg} ${categoryConfig.color} flex items-center justify-center`}
+                title={task.category}
+              >
+                <CategoryIcon className="w-3.5 h-3.5" />
+              </div>
+            </div>
+
+            {/* Middle block: Title, Category Badge, and Date Badge on a clean straight line */}
+            <div className="flex-1 min-w-0 flex items-center justify-between gap-4" onClick={() => setIsExpanded(!isExpanded)}>
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                <h4 
+                  id={`task-title-${task.id}`}
+                  className={`text-sm font-bold tracking-tight truncate cursor-pointer select-none transition-colors ${
+                    task.completed 
+                      ? 'text-slate-400 line-through dark:text-slate-500' 
+                      : 'text-slate-800 dark:text-slate-100'
+                  }`}
+                >
+                  {task.name}
+                </h4>
+                  
+                {/* Badges inline */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {task.pinned && (
+                    <Pin className="w-3 h-3 text-blue-500 fill-blue-500 transform rotate-45" />
+                  )}
+                  {isOverdue && (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-950/20 px-1 py-0.5 rounded">
+                      <AlertCircle className="w-2.5 h-2.5" />
+                      Overdue
+                    </span>
+                  )}
+                  {progress && (
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/80 px-1.5 py-0.5 rounded">
+                      <ListTodo className="w-2.5 h-2.5" />
+                      {progress.completed}/{progress.total}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Badges container on the right side of the straight line */}
+              <div className="flex items-center gap-2 shrink-0">
+                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border flex items-center gap-1 ${
+                  isOverdue 
+                    ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400'
+                    : 'bg-slate-50 border-slate-100 text-slate-500 dark:bg-slate-850 dark:border-slate-800 dark:text-slate-400'
+                }`}>
+                  <Clock className="w-2.5 h-2.5" />
+                  {task.completed ? 'Done' : formatTimeStr(task.dueTime)}
+                </span>
+
+                {task.priority !== 'Low' && (
+                  <span className={`hidden sm:inline-flex px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider ${priorityColors[task.priority]}`}>
+                    {task.priority}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Badges container on the right side of the straight line */}
-            <div className="flex items-center gap-2 shrink-0">
-              <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border flex items-center gap-1 ${
-                isOverdue 
-                  ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400'
-                  : 'bg-slate-50 border-slate-100 text-slate-500 dark:bg-slate-850 dark:border-slate-800 dark:text-slate-400'
-              }`}>
-                <Clock className="w-2.5 h-2.5" />
-                {task.completed ? 'Done' : formatTimeStr(task.dueTime)}
-              </span>
-
+            {/* Desktop Action Buttons: Hidden on mobile, visible on hover on desktop */}
+            <div className="hidden sm:flex items-center justify-end gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleTimer(); setIsExpanded(true); }}
+                title="Focus Timer"
+                className={`p-1 rounded-lg transition-colors cursor-pointer ${timerMode !== 'idle' ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+              >
+                <Timer className="w-3.5 h-3.5" />
+              </button>
+              <button
+                id={`btn-pin-task-${task.id}`}
+                onClick={(e) => { e.stopPropagation(); onTogglePin(task.id); }}
+                title={task.pinned ? 'Unpin' : 'Pin to top'}
+                className={`p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${task.pinned ? 'text-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Pin className="w-3.5 h-3.5" />
+              </button>
+              <button
+                id={`btn-edit-task-${task.id}`}
+                onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+                title="Edit Task"
+                className="p-1 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                id={`btn-delete-task-${task.id}`}
+                onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
+                title="Delete Task"
+                className="p-1 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+              <button
+                id={`btn-expand-task-${task.id}`}
+                onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          
+          {/* Mobile Action Bar: Only visible on mobile, beautifully placed down below */}
+          <div className="flex sm:hidden items-center justify-between px-4 pb-3 pt-1 border-t border-transparent group-hover:border-slate-50 dark:group-hover:border-slate-800/50">
+            <div className="flex items-center gap-2">
               {task.priority !== 'Low' && (
                 <span className={`px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider ${priorityColors[task.priority]}`}>
                   {task.priority}
                 </span>
               )}
             </div>
-          </div>
-
-          {/* Right Block: Action buttons (Compact and styled beautifully) */}
-          <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={(e) => { e.stopPropagation(); toggleTimer(); setIsExpanded(true); }}
-              title="Focus Timer"
-              className={`p-1 rounded-lg transition-colors cursor-pointer ${timerMode !== 'idle' ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
-            >
-              <Timer className="w-3.5 h-3.5" />
-            </button>
-            <button
-              id={`btn-pin-task-${task.id}`}
-              onClick={(e) => { e.stopPropagation(); onTogglePin(task.id); }}
-              title={task.pinned ? 'Unpin' : 'Pin to top'}
-              className={`p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${task.pinned ? 'text-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
-            >
-              <Pin className="w-3.5 h-3.5" />
-            </button>
-            <button
-              id={`btn-edit-task-${task.id}`}
-              onClick={(e) => { e.stopPropagation(); onEdit(task); }}
-              title="Edit Task"
-              className="p-1 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <Edit2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              id={`btn-delete-task-${task.id}`}
-              onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
-              title="Delete Task"
-              className="p-1 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
-            <button
-              id={`btn-expand-task-${task.id}`}
-              onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
-              className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-            </button>
+            <div className="flex items-center justify-end gap-2 shrink-0">
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleTimer(); setIsExpanded(true); }}
+                title="Focus Timer"
+                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${timerMode !== 'idle' ? 'text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'text-slate-400 hover:text-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+              >
+                <Timer className="w-4 h-4" />
+              </button>
+              <button
+                id={`btn-pin-task-${task.id}-mobile`}
+                onClick={(e) => { e.stopPropagation(); onTogglePin(task.id); }}
+                title={task.pinned ? 'Unpin' : 'Pin to top'}
+                className={`p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ${task.pinned ? 'text-blue-500' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                <Pin className="w-4 h-4" />
+              </button>
+              <button
+                id={`btn-edit-task-${task.id}-mobile`}
+                onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+                title="Edit Task"
+                className="p-1.5 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button
+                id={`btn-delete-task-${task.id}-mobile`}
+                onClick={(e) => { e.stopPropagation(); onDelete(task.id); }}
+                title="Delete Task"
+                className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <button
+                id={`btn-expand-task-${task.id}-mobile`}
+                onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </button>
+            </div>
           </div>
         </div>
 
