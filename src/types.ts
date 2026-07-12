@@ -65,7 +65,7 @@ export interface DailyGoalHistoryItem {
 }
 
 export interface UserPreferences {
-  darkMode: boolean;
+  darkMode: boolean | 'Auto';
   notificationReminders: boolean;
   reminderTimes: string; // HH:MM
   startOfWeek: 'Monday' | 'Sunday';
@@ -77,6 +77,7 @@ export interface UserPreferences {
   dailyGoalCompleted?: boolean;
   dailyGoalCompletedDate?: string;
   dailyGoalsHistory?: DailyGoalHistoryItem[];
+  autoDeleteOldNotes?: boolean;
 }
 
 export interface SmartSuggestion {
@@ -91,3 +92,11 @@ export interface DailyActivity {
   completedHabits: string[]; // habit IDs
   missedHabits: string[];    // habit IDs
 }
+
+export interface Note {
+  id: string;
+  content: string;
+  createdAt: string; // ISO timestamp
+  pinned?: boolean;
+}
+

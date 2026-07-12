@@ -4,9 +4,10 @@ import {
   Check, Clock, Flag, Pin, Trash2, Edit2, 
   ChevronDown, ChevronUp, ListTodo, Paperclip, AlertCircle,
   Play, Pause, Square, Coffee, Timer,
-  Briefcase, Heart, BookOpen, Coins, ShoppingCart, User
+  Briefcase, Heart, BookOpen, Coins, ShoppingCart, User,
+  Bookmark, Star, Target, Home, Sparkles, Activity, DollarSign
 } from 'lucide-react';
-import { Task, Priority } from '../types';
+import { Task, Priority, Category } from '../types';
 import { formatTimeStr, formatDate } from '../utils';
 
 interface TaskCardProps {
@@ -17,6 +18,7 @@ interface TaskCardProps {
   onDelete: (id: string) => void;
   onEdit: (task: Task) => void;
   onToggleSubtask: (taskId: string, subtaskId: string) => void;
+  categories?: Category[];
   activeFocusTaskId?: string | null;
   activeFocusTimeLeft?: number;
   activeFocusTimerMode?: 'idle' | 'work' | 'break';
@@ -36,6 +38,36 @@ const categoryConfigs: Record<string, { icon: React.ComponentType<any>; color: s
   Personal: { icon: User, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-50 dark:bg-blue-950/30' },
 };
 
+const iconMap: Record<string, React.ComponentType<any>> = {
+  Briefcase,
+  Heart,
+  BookOpen,
+  Coins,
+  DollarSign,
+  ShoppingCart,
+  User,
+  Bookmark,
+  Star,
+  Target,
+  Home,
+  Sparkles,
+  Activity,
+};
+
+const getCategoryStyles = (catColor: string) => {
+  const colorMap: Record<string, { bg: string; color: string }> = {
+    'bg-blue-500': { bg: 'bg-blue-50 dark:bg-blue-950/30', color: 'text-blue-600 dark:text-blue-400' },
+    'bg-indigo-500': { bg: 'bg-indigo-50 dark:bg-indigo-950/30', color: 'text-indigo-600 dark:text-indigo-400' },
+    'bg-violet-500': { bg: 'bg-violet-50 dark:bg-violet-950/30', color: 'text-violet-600 dark:text-violet-400' },
+    'bg-emerald-500': { bg: 'bg-emerald-50 dark:bg-emerald-950/30', color: 'text-emerald-600 dark:text-emerald-400' },
+    'bg-amber-500': { bg: 'bg-amber-50 dark:bg-amber-950/20', color: 'text-amber-600 dark:text-amber-400' },
+    'bg-rose-500': { bg: 'bg-rose-50 dark:bg-rose-950/30', color: 'text-rose-600 dark:text-rose-400' },
+    'bg-teal-500': { bg: 'bg-teal-50 dark:bg-teal-950/30', color: 'text-teal-600 dark:text-teal-400' },
+    'bg-slate-500': { bg: 'bg-slate-50 dark:bg-slate-800/40', color: 'text-slate-600 dark:text-slate-400' },
+  };
+  return colorMap[catColor] || { bg: 'bg-blue-50 dark:bg-blue-950/30', color: 'text-blue-600 dark:text-blue-400' };
+};
+
 const getCategoryConfig = (category: string) => {
   return categoryConfigs[category] || { icon: ListTodo, color: 'text-slate-600 dark:text-slate-400', bg: 'bg-slate-100 dark:bg-slate-800/40' };
 };
@@ -47,6 +79,7 @@ export default function TaskCard({
   onDelete,
   onEdit,
   onToggleSubtask,
+  categories,
   activeFocusTaskId,
   activeFocusTimeLeft,
   activeFocusTimerMode,
@@ -106,8 +139,16 @@ export default function TaskCard({
   };
 
   const progress = getSubtasksProgress();
-  const categoryConfig = getCategoryConfig(task.category);
-  const CategoryIcon = categoryConfig.icon;
+  
+  // Dynamic category styling and icon resolution
+  const catObj = categories?.find(c => c.name === task.category);
+  const CategoryIcon = catObj && iconMap[catObj.icon] 
+    ? iconMap[catObj.icon] 
+    : (categoryConfigs[task.category]?.icon || ListTodo);
+  
+  const categoryConfig = catObj 
+    ? getCategoryStyles(catObj.color) 
+    : (categoryConfigs[task.category] || { bg: 'bg-slate-100 dark:bg-slate-800/40', color: 'text-slate-600 dark:text-slate-400' });
 
   return (
     <motion.div

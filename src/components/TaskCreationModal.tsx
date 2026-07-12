@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, Plus, Check, Trash2, Calendar, Clock, Flag, 
@@ -15,6 +15,7 @@ interface TaskCreationModalProps {
   onSaveHabit: (habit: Omit<Habit, 'id' | 'streak' | 'bestStreak' | 'history' | 'createdAt'>) => void;
   categories: Category[];
   onCreateCategory: (cat: Category) => void;
+  initialStage?: 'select' | 'task' | 'habit';
 }
 
 export default function TaskCreationModal({
@@ -23,14 +24,32 @@ export default function TaskCreationModal({
   onSaveTask,
   onSaveHabit,
   categories,
-  onCreateCategory
+  onCreateCategory,
+  initialStage = 'select'
 }: TaskCreationModalProps) {
-  const [stage, setStage] = useState<'select' | 'task' | 'habit'>('select');
+  const [stage, setStage] = useState<'select' | 'task' | 'habit'>(initialStage);
+
+  // Sync stage on open
+  useEffect(() => {
+    if (isOpen) {
+      setStage(initialStage);
+    }
+  }, [isOpen, initialStage]);
 
   // Task form states
   const [taskName, setTaskName] = useState('');
   const [taskDesc, setTaskDesc] = useState('');
-  const [taskCategory, setTaskCategory] = useState('Personal');
+  const [taskCategory, setTaskCategory] = useState(() => categories[0]?.name || 'Personal');
+
+  // Synchronize category selection if categories array changes
+  useEffect(() => {
+    if (categories && categories.length > 0) {
+      const exists = categories.some(c => c.name === taskCategory);
+      if (!exists) {
+        setTaskCategory(categories[0].name);
+      }
+    }
+  }, [categories, taskCategory]);
   const [taskPriority, setTaskPriority] = useState<Priority>('Medium');
   const [taskDueDate, setTaskDueDate] = useState(formatDate(new Date()));
   const [taskDueTime, setTaskDueTime] = useState('12:00');
@@ -81,10 +100,10 @@ export default function TaskCreationModal({
   };
 
   const resetForms = () => {
-    setStage('select');
+    setStage(initialStage);
     setTaskName('');
     setTaskDesc('');
-    setTaskCategory('Personal');
+    setTaskCategory(categories[0]?.name || 'Personal');
     setTaskPriority('Medium');
     setTaskDueDate(formatDate(new Date()));
     setTaskDueTime('12:00');

@@ -321,7 +321,8 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   dailyGoal: '',
   dailyGoalDate: '',
   dailyGoalCompleted: false,
-  dailyGoalCompletedDate: ''
+  dailyGoalCompletedDate: '',
+  autoDeleteOldNotes: true
 };
 
 // Generate helpful smart notifications / suggestions based on tasks & habits state

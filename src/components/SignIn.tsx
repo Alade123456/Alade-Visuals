@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { User, Mail, Lock, ArrowRight, Sparkles } from 'lucide-react';
 import { supabase } from '../supabaseClient';
@@ -32,6 +32,131 @@ export default function SignIn({ onSignIn }: SignInProps) {
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('success') === '1') {
+      setIsSignUp(false);
+      setSuccessMessage('Your account has been created. Please check your email and verify your address before logging in.');
+      const emailParam = params.get('email');
+      if (emailParam) {
+        setEmail(emailParam);
+      }
+      
+      // Clean up URL
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, '', newUrl);
+    }
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setSuccessMessage('');
+    setIsLoading(true);
+
+    let checkPopup: any = null;
+    let messageListener: ((event: MessageEvent) => void) | null = null;
+
+    const cleanup = () => {
+      if (checkPopup) clearInterval(checkPopup);
+      if (messageListener) window.removeEventListener('message', messageListener);
+      setIsLoading(false);
+    };
+
+    const handleSuccess = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const userMetadata = session.user?.user_metadata || {};
+          const googleName = userMetadata.full_name || userMetadata.name || session.user?.email?.split('@')[0] || 'User';
+          const currentLocalName = localStorage.getItem('aura_local_username');
+          const finalUsername = currentLocalName || userMetadata.username || googleName;
+          
+          const currentLocalAvatar = localStorage.getItem('aura_local_avatar');
+          let finalAvatar = currentLocalAvatar;
+          if (!currentLocalAvatar) {
+            if (typeof userMetadata.avatar_idx === 'number') {
+              const preset = AVATAR_PRESETS[userMetadata.avatar_idx] || AVATAR_PRESETS[0];
+              finalAvatar = `preset|${preset.emoji}|${preset.bg}`;
+            } else if (userMetadata.avatar_url) {
+              finalAvatar = userMetadata.avatar_url;
+            } else {
+              const preset = AVATAR_PRESETS[0];
+              finalAvatar = `preset|${preset.emoji}|${preset.bg}`;
+            }
+            localStorage.setItem('aura_local_avatar', finalAvatar);
+          }
+          
+          localStorage.setItem('aura_local_username', finalUsername);
+          localStorage.setItem('aura_auth', 'true');
+          
+          onSignIn(finalUsername, finalAvatar || '');
+        }
+      } catch (err) {
+        console.error('Error fetching session after Google OAuth:', err);
+      } finally {
+        cleanup();
+      }
+    };
+
+    try {
+      const { data, error: oAuthError } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+          skipBrowserRedirect: true,
+        },
+      });
+
+      if (oAuthError) {
+        setError(oAuthError.message);
+        setIsLoading(false);
+        return;
+      }
+
+      if (data?.url) {
+        const width = 500;
+        const height = 650;
+        const left = window.screen.width / 2 - width / 2;
+        const top = window.screen.height / 2 - height / 2;
+        
+        const popup = window.open(
+          data.url,
+          'supabase_oauth_popup',
+          `width=${width},height=${height},top=${top},left=${left},status=no,resizable=yes,scrollbars=yes`
+        );
+
+        if (!popup) {
+          setError('Popup blocked! Please allow popups for this site to sign in with Google.');
+          setIsLoading(false);
+          return;
+        }
+
+        // Listen for message from the popup
+        messageListener = (event: MessageEvent) => {
+          if (event.origin !== window.location.origin) return;
+          if (event.data?.type === 'OAUTH_SUCCESS') {
+            if (popup) popup.close();
+            handleSuccess();
+          }
+        };
+        window.addEventListener('message', messageListener);
+
+        // Fallback polling for popup closure
+        checkPopup = setInterval(() => {
+          if (!popup || popup.closed) {
+            handleSuccess();
+          }
+        }, 1000);
+      } else {
+        setError('Failed to retrieve authentication URL.');
+        setIsLoading(false);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'An error occurred during Google sign-in.');
+      setIsLoading(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -61,15 +186,17 @@ export default function SignIn({ onSignIn }: SignInProps) {
         return;
       }
 
-      // Success! Switch to Sign In view
-      setIsSignUp(false);
-      setPassword('');
-      setSuccessMessage('Your account has been created. Please check your email and verify your address before logging in.');
-      
       // Ensure they are not auto-logged in, in case email verification is disabled
       if (data.session) {
         await supabase.auth.signOut();
       }
+
+      // Success! Redirect to sign in with query params to prefill email
+      const queryParams = new URLSearchParams({
+        success: '1',
+        email: email.trim()
+      });
+      window.location.href = `/?${queryParams.toString()}`;
     } else {
       if (!email.trim() || !password) {
         setError('Please fill in all fields');
@@ -265,6 +392,41 @@ export default function SignIn({ onSignIn }: SignInProps) {
               {isLoading ? 'Loading...' : (isSignUp ? 'Create Profile' : 'Sign In')}
               {!isLoading && <ArrowRight size={18} />}
             </button>
+
+            {/* Divider */}
+            <div className="relative flex py-2 items-center">
+              <div className="flex-grow border-t border-slate-150 dark:border-slate-700/60"></div>
+              <span className="flex-shrink mx-4 text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">or</span>
+              <div className="flex-grow border-t border-slate-150 dark:border-slate-700/60"></div>
+            </div>
+
+            {/* Google Sign In Button */}
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={isLoading}
+              className="w-full flex items-center justify-center gap-2.5 bg-slate-50 dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-200 font-bold py-3.5 rounded-2xl border border-slate-200 dark:border-slate-700/80 transition-all active:scale-[0.98] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path
+                  fill="#4285F4"
+                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                />
+              </svg>
+              <span>Continue with Google</span>
+            </button>
             
             <div className="text-center mt-6">
               <button
@@ -272,6 +434,7 @@ export default function SignIn({ onSignIn }: SignInProps) {
                 onClick={() => {
                   setIsSignUp(!isSignUp);
                   setError('');
+                  setSuccessMessage('');
                 }}
                 className="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium transition-colors"
               >

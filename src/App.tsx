@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Plus, Search, Filter, ArrowUpDown, Sparkles, 
+  Plus, Search, Filter, ArrowUpDown, Sparkles, FileText, StickyNote, 
   Download, Moon, Sun, Bell, BookOpen, Info, 
   Settings, Award, Flame, CheckCircle, Clock, Pin,
   Edit2, Trash2, Calendar, LayoutGrid, RotateCcw, AlertCircle,
-  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check, Coffee, Timer, LogOut
+  Play, Pause, Square, X, Zap, ChevronDown, ChevronUp, ChevronRight, Check, Coffee, Timer, LogOut,
+  Briefcase, User, Activity, DollarSign, ShoppingCart, Bookmark, Star, Target, Home
 } from 'lucide-react';
-import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval } from './types';
+import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, Priority, RepeatInterval, Note } from './types';
 import { 
   getInitialTasks, getInitialHabits, INITIAL_ACHIEVEMENTS, 
   DEFAULT_CATEGORIES, DEFAULT_PREFERENCES, PRODUCTIVITY_QUOTES,
@@ -23,6 +24,7 @@ import AnalyticsView from './components/AnalyticsView';
 import AchievementsView from './components/AchievementsView';
 import TaskCreationModal from './components/TaskCreationModal';
 import SignIn from './components/SignIn';
+import AnimatedCounter from './components/AnimatedCounter';
 import confetti from 'canvas-confetti';
 
 const AVATAR_PRESETS = [
@@ -54,18 +56,75 @@ export default function App() {
   useEffect(() => {
     // Import supabase dynamically or import it at the top
     import('./supabaseClient').then(({ supabase }) => {
+      const handleSessionChange = (session: any) => {
+        if (session) {
+          setIsAuthenticated(true);
+          
+          // Try to extract metadata
+          const userMetadata = session.user?.user_metadata || {};
+          
+          // Google provider supplies full_name or name, and avatar_url
+          // Manual signup supplies username and avatar_idx
+          const googleName = userMetadata.full_name || userMetadata.name || session.user?.email?.split('@')[0] || 'User';
+          
+          const currentLocalName = localStorage.getItem('aura_local_username');
+          const finalUsername = currentLocalName || userMetadata.username || googleName;
+          
+          setDisplayName(finalUsername);
+          localStorage.setItem('aura_local_username', finalUsername);
+          
+          // Handle avatar
+          const currentLocalAvatar = localStorage.getItem('aura_local_avatar');
+          if (!currentLocalAvatar) {
+            let finalAvatar = '';
+            if (typeof userMetadata.avatar_idx === 'number') {
+              const preset = AVATAR_PRESETS[userMetadata.avatar_idx] || AVATAR_PRESETS[0];
+              finalAvatar = `preset|${preset.emoji}|${preset.bg}`;
+            } else if (userMetadata.avatar_url) {
+              finalAvatar = userMetadata.avatar_url;
+            } else {
+              const preset = AVATAR_PRESETS[0];
+              finalAvatar = `preset|${preset.emoji}|${preset.bg}`;
+            }
+            setAvatarUrl(finalAvatar);
+            localStorage.setItem('aura_local_avatar', finalAvatar);
+          } else {
+            setAvatarUrl(currentLocalAvatar);
+          }
+
+          localStorage.setItem('aura_auth', 'true');
+        } else {
+          setIsAuthenticated(false);
+          localStorage.removeItem('aura_auth');
+        }
+      };
+
       supabase.auth.getSession().then(({ data: { session } }) => {
-        setIsAuthenticated(!!session);
+        handleSessionChange(session);
         setAuthLoading(false);
       });
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-        setIsAuthenticated(!!session);
+        handleSessionChange(session);
       });
 
       return () => subscription.unsubscribe();
     });
   }, []);
+
+  // If this window is a Supabase OAuth popup, notify parent and close
+  useEffect(() => {
+    if (window.opener && window.opener !== window) {
+      if (isAuthenticated) {
+        try {
+          window.opener.postMessage({ type: 'OAUTH_SUCCESS' }, window.location.origin);
+        } catch (e) {
+          // ignore potential cross-origin issues
+        }
+        window.close();
+      }
+    }
+  }, [isAuthenticated]);
 
   // --- DATA STATE ---
   const loadLocal = (key: string, fallback: any) => {
@@ -85,10 +144,17 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>(() => loadLocal('aura_categories', DEFAULT_CATEGORIES));
   const [achievements, setAchievements] = useState<Achievement[]>(() => loadLocal('aura_achievements', INITIAL_ACHIEVEMENTS));
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadLocal('aura_preferences', DEFAULT_PREFERENCES));
+  const [notes, setNotes] = useState<Note[]>(() => loadLocal('aura_notes', []));
 
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [profileSubTab, setProfileSubTab] = useState<'achievements' | 'analytics' | 'calendar' | 'settings'>('achievements');
   const [isCreating, setIsCreating] = useState(false);
+  const [modalInitialStage, setModalInitialStage] = useState<'select' | 'task' | 'habit'>('select');
+
+  const openCreateModal = (stage: 'select' | 'task' | 'habit' = 'select') => {
+    setModalInitialStage(stage);
+    setIsCreating(true);
+  };
 
   // Profile management states
   const [isEditingName, setIsEditingName] = useState(false);
@@ -100,6 +166,8 @@ export default function App() {
   const [taskCategoryFilter, setTaskCategoryFilter] = useState('All');
   const [taskPriorityFilter, setTaskPriorityFilter] = useState('All');
   const [taskSort, setTaskSort] = useState<'time' | 'priority' | 'completion'>('time');
+  const [showOnlyIncomplete, setShowOnlyIncomplete] = useState(false);
+  const [quickNoteText, setQuickNoteText] = useState('');
 
   // Interactive custom notifications/toasts
   const [notification, setNotification] = useState<{ title: string; message: string } | null>(null);
@@ -119,18 +187,71 @@ export default function App() {
       localStorage.setItem('aura_categories', JSON.stringify(categories));
       localStorage.setItem('aura_achievements', JSON.stringify(achievements));
       localStorage.setItem('aura_preferences', JSON.stringify(preferences));
+      localStorage.setItem('aura_notes', JSON.stringify(notes));
     }
-  }, [tasks, habits, categories, achievements, preferences, isAuthenticated]);
+  }, [tasks, habits, categories, achievements, preferences, notes, isAuthenticated]);
+
+  // Automatically deletes notes older than 7 days when the app loads
+  useEffect(() => {
+    const isAutoCleanupEnabled = preferences.autoDeleteOldNotes ?? true;
+    if (isAutoCleanupEnabled) {
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      setNotes(prevNotes => {
+        const remainingNotes = prevNotes.filter(note => {
+          const noteTime = new Date(note.createdAt).getTime();
+          return noteTime >= sevenDaysAgo;
+        });
+        return remainingNotes;
+      });
+    }
+  }, []);
 
   // Synchronize dark mode class
   useEffect(() => {
     // Add a class to enable global transitions for theme colors
     document.documentElement.classList.add('theme-transitioning');
     
-    if (preferences.darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+    const applyTheme = () => {
+      let isDark = false;
+      if (preferences.darkMode === 'Auto') {
+        isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      } else {
+        isDark = !!preferences.darkMode;
+      }
+
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+
+    applyTheme();
+
+    // Set up media query listener if 'Auto' is selected
+    let mediaQuery: MediaQueryList | null = null;
+    let listener: ((e: MediaQueryListEvent) => void) | null = null;
+
+    if (preferences.darkMode === 'Auto') {
+      mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      listener = (e: MediaQueryListEvent) => {
+        document.documentElement.classList.add('theme-transitioning');
+        if (e.matches) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+        setTimeout(() => {
+          document.documentElement.classList.remove('theme-transitioning');
+        }, 300);
+      };
+
+      if (mediaQuery.addEventListener) {
+        mediaQuery.addEventListener('change', listener);
+      } else if ((mediaQuery as any).addListener) {
+        // Fallback for older browsers
+        (mediaQuery as any).addListener(listener);
+      }
     }
 
     // Remove the global transition class after the transition duration
@@ -138,7 +259,16 @@ export default function App() {
       document.documentElement.classList.remove('theme-transitioning');
     }, 300);
 
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(timeout);
+      if (mediaQuery && listener) {
+        if (mediaQuery.removeEventListener) {
+          mediaQuery.removeEventListener('change', listener);
+        } else if ((mediaQuery as any).removeListener) {
+          (mediaQuery as any).removeListener(listener);
+        }
+      }
+    };
   }, [preferences.darkMode]);
 
   // Focus Timer Interval
@@ -340,12 +470,14 @@ export default function App() {
     localStorage.removeItem('aura_tasks');
     localStorage.removeItem('aura_habits');
     localStorage.removeItem('aura_achievements');
+    localStorage.removeItem('aura_notes');
     setTasks([]);
     setHabits([]);
+    setNotes([]);
     setAchievements(INITIAL_ACHIEVEMENTS);
     setNotification({
       title: 'Data Reset',
-      message: 'App statistics, tasks, and habits have been reset to 0.',
+      message: 'App statistics, tasks, habits, and notes have been reset to 0.',
     });
   };
 
@@ -358,8 +490,10 @@ export default function App() {
     }
     setIsAuthenticated(false);
     localStorage.removeItem('aura_auth');
+    localStorage.removeItem('aura_notes');
     setTasks([]);
     setHabits([]);
+    setNotes([]);
     setAchievements(INITIAL_ACHIEVEMENTS);
     setPreferences(DEFAULT_PREFERENCES);
     setAvatarUrl('');
@@ -546,8 +680,125 @@ export default function App() {
     setHabits(prev => prev.filter(h => h.id !== id));
   };
 
+  // Category management states
+  const [editingCatId, setEditingCatId] = useState<string | null>(null);
+  const [editingCatName, setEditingCatName] = useState('');
+  const [showAddCategorySection, setShowAddCategorySection] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatColor, setNewCatColor] = useState('bg-blue-500');
+  const [newCatIcon, setNewCatIcon] = useState('Bookmark');
+
+  const TAILWIND_COLOR_PRESETS = [
+    'bg-blue-500',
+    'bg-indigo-500',
+    'bg-violet-500',
+    'bg-emerald-500',
+    'bg-amber-500',
+    'bg-rose-500',
+    'bg-teal-500',
+    'bg-slate-500',
+  ];
+
+  const AVAILABLE_ICONS = [
+    'Briefcase',
+    'User',
+    'Activity',
+    'BookOpen',
+    'DollarSign',
+    'ShoppingCart',
+    'Bookmark',
+    'Star',
+    'Target',
+    'Home',
+    'Sparkles',
+  ];
+
+  const renderCategoryIcon = (name: string, className = "w-4 h-4") => {
+    switch (name) {
+      case 'Briefcase': return <Briefcase className={className} />;
+      case 'User': return <User className={className} />;
+      case 'Activity': return <Activity className={className} />;
+      case 'BookOpen': return <BookOpen className={className} />;
+      case 'DollarSign': return <DollarSign className={className} />;
+      case 'ShoppingCart': return <ShoppingCart className={className} />;
+      case 'Star': return <Star className={className} />;
+      case 'Target': return <Target className={className} />;
+      case 'Home': return <Home className={className} />;
+      case 'Sparkles': return <Sparkles className={className} />;
+      default: return <Bookmark className={className} />;
+    }
+  };
+
   const handleCreateCategory = (cat: Category) => {
     setCategories(prev => [...prev, cat]);
+  };
+
+  const handleUpdateCategoryName = (id: string) => {
+    if (!editingCatName.trim()) return;
+    const cat = categories.find(c => c.id === id);
+    if (!cat) return;
+    const oldName = cat.name;
+    const newName = editingCatName.trim();
+    
+    // Check if the name already exists
+    if (categories.some(c => c.id !== id && c.name.toLowerCase() === newName.toLowerCase())) {
+      alert("A category with this name already exists.");
+      return;
+    }
+
+    setCategories(prev => prev.map(c => c.id === id ? { ...c, name: newName } : c));
+    setTasks(prev => prev.map(t => t.category === oldName ? { ...t, category: newName } : t));
+    
+    if (taskCategoryFilter === oldName) {
+      setTaskCategoryFilter(newName);
+    }
+    
+    setEditingCatId(null);
+  };
+
+  const handleDeleteCategory = (id: string) => {
+    const cat = categories.find(c => c.id === id);
+    if (!cat) return;
+    
+    if (categories.length <= 1) {
+      alert("You must keep at least one category.");
+      return;
+    }
+
+    if (confirm(`Are you sure you want to delete the category "${cat.name}"? All tasks in this category will be reassigned.`)) {
+      const oldName = cat.name;
+      const remaining = categories.filter(c => c.id !== id);
+      const fallbackName = remaining[0].name;
+
+      setCategories(remaining);
+      setTasks(prev => prev.map(t => t.category === oldName ? { ...t, category: fallbackName } : t));
+
+      if (taskCategoryFilter === oldName) {
+        setTaskCategoryFilter('All');
+      }
+    }
+  };
+
+  const handleSaveNewCategory = () => {
+    if (!newCatName.trim()) return;
+    const name = newCatName.trim();
+
+    if (categories.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+      alert("A category with this name already exists.");
+      return;
+    }
+
+    const newCat: Category = {
+      id: `cat-custom-${Date.now()}`,
+      name,
+      color: newCatColor,
+      icon: newCatIcon,
+      isCustom: true
+    };
+
+    setCategories(prev => [...prev, newCat]);
+    setNewCatName('');
+    setShowAddCategorySection(false);
   };
 
   // Avatar helper renderer
@@ -578,7 +829,8 @@ export default function App() {
                           (task.description && task.description.toLowerCase().includes(taskSearch.toLowerCase()));
     const matchesCategory = taskCategoryFilter === 'All' || task.category === taskCategoryFilter;
     const matchesPriority = taskPriorityFilter === 'All' || task.priority === taskPriorityFilter;
-    return matchesSearch && matchesCategory && matchesPriority;
+    const matchesIncomplete = !showOnlyIncomplete || !task.completed;
+    return matchesSearch && matchesCategory && matchesPriority && matchesIncomplete;
   });
 
   // Sort filtered tasks
@@ -608,6 +860,40 @@ export default function App() {
 
   // Smart suggestions ticker list
   const activeSuggestions = getSmartSuggestions(tasks, habits);
+
+  const handleAddNote = () => {
+    if (!quickNoteText.trim()) return;
+    const newNote: Note = {
+      id: `note-${Date.now()}`,
+      content: quickNoteText.trim(),
+      createdAt: new Date().toISOString()
+    };
+    setNotes(prev => [newNote, ...prev]);
+    setQuickNoteText('');
+    
+    // Subtle haptic feedback
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(10);
+    }
+  };
+
+  const handleDeleteNote = (id: string) => {
+    setNotes(prev => prev.filter(note => note.id !== id));
+    
+    // Subtle haptic feedback
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(10);
+    }
+  };
+
+  const handleTogglePinNote = (id: string) => {
+    setNotes(prev => prev.map(note => note.id === id ? { ...note, pinned: !note.pinned } : note));
+    
+    // Subtle haptic feedback
+    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+      navigator.vibrate(10);
+    }
+  };
 
   const renderHome = () => (
     <div className="p-6 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -692,14 +978,18 @@ export default function App() {
           <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-500/10 flex items-center justify-center text-blue-500 mb-4">
             <CheckCircle className="w-5 h-5" />
           </div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{pendingTasksCount}</h3>
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <AnimatedCounter value={pendingTasksCount} />
+          </h3>
           <p className="text-slate-500 dark:text-slate-400 text-xs font-semibold">Pending Tasks Today</p>
         </div>
         <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-750/60">
           <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-500 mb-4">
             <Flame className="w-5 h-5" />
           </div>
-          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">{pendingHabitsCount}</h3>
+          <h3 className="text-2xl font-bold text-slate-900 dark:text-white">
+            <AnimatedCounter value={pendingHabitsCount} />
+          </h3>
           <p className="text-slate-500 dark:text-slate-400 text-xs font-semibold">Incomplete Habits</p>
         </div>
       </div>
@@ -742,6 +1032,7 @@ export default function App() {
               onDelete={handleDeleteTask}
               onEdit={handleEditTask}
               onToggleSubtask={handleToggleSubtask}
+              categories={categories}
               activeFocusTaskId={activeFocusTaskId}
               activeFocusTimeLeft={activeFocusTimeLeft}
               activeFocusTimerMode={activeFocusTimerMode}
@@ -757,6 +1048,118 @@ export default function App() {
               No tasks for today. Tap "Create New" to schedule something!
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Ephemeral Quick Thoughts / Notes Panel */}
+      <div className="space-y-4 pt-2">
+        <div className="flex justify-between items-center">
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-1.5">
+            <StickyNote size={16} className="text-slate-400" /> Ephemeral Thoughts
+          </h2>
+          {notes.length > 0 && (
+            <span className="text-[10px] font-extrabold bg-blue-50 dark:bg-blue-500/10 text-blue-500 px-2 py-0.5 rounded-full">
+              {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+            </span>
+          )}
+        </div>
+
+        {/* Note Input Box */}
+        <div className="flex gap-2 bg-white dark:bg-slate-800 p-2.5 rounded-2xl border border-slate-100 dark:border-slate-750/50 shadow-sm">
+          <input
+            type="text"
+            value={quickNoteText}
+            onChange={(e) => setQuickNoteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleAddNote();
+              }
+            }}
+            className="flex-grow px-3 py-2 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-150/60 dark:border-slate-700/80 outline-none focus:ring-2 focus:ring-blue-500/30 text-xs text-slate-850 dark:text-white"
+            placeholder="Jot down a quick thought, idea, or draft..."
+          />
+          <button
+            type="button"
+            onClick={handleAddNote}
+            disabled={!quickNoteText.trim()}
+            className="bg-blue-500 hover:bg-blue-600 disabled:bg-slate-100 dark:disabled:bg-slate-900 disabled:text-slate-400 text-white p-2.5 rounded-xl transition-all flex items-center justify-center shrink-0 active:scale-95 cursor-pointer"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+
+        {/* Notes list / grid container */}
+        <div className="relative">
+          <AnimatePresence initial={false}>
+            {notes.length > 0 ? (
+              <motion.div 
+                layout
+                className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+              >
+                {[...notes].sort((a, b) => {
+                  const aPinned = !!a.pinned;
+                  const bPinned = !!b.pinned;
+                  if (aPinned !== bPinned) {
+                    return aPinned ? -1 : 1;
+                  }
+                  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+                }).map((note) => (
+                  <motion.div
+                    key={note.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.95, y: -10 }}
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                    className={`bg-amber-50/30 dark:bg-amber-950/5 border p-4 rounded-2xl relative flex flex-col justify-between group hover:shadow-sm transition-all ${note.pinned ? 'border-amber-300 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-950/10 shadow-sm' : 'border-amber-100/60 dark:border-amber-900/10 hover:border-amber-200/50 dark:hover:border-amber-900/30'}`}
+                  >
+                    <div className="absolute right-3 top-3 flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleTogglePinNote(note.id)}
+                        className={`p-1 rounded-lg hover:bg-slate-150/50 dark:hover:bg-slate-800/50 transition-all cursor-pointer ${note.pinned ? 'text-amber-500 dark:text-amber-400 opacity-100' : 'opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                        title={note.pinned ? "Unpin Note" : "Pin Note"}
+                      >
+                        <Pin size={12} className={note.pinned ? "fill-current" : ""} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteNote(note.id)}
+                        className="opacity-0 group-hover:opacity-100 focus:opacity-100 text-slate-400 hover:text-red-500 dark:text-slate-500 dark:hover:text-red-400 p-1 rounded-lg hover:bg-slate-150/50 dark:hover:bg-slate-800/50 transition-all cursor-pointer"
+                        title="Delete Note"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                    
+                    <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed pr-12 break-words whitespace-pre-wrap">
+                      {note.content}
+                    </p>
+                    
+                    <div className="flex justify-between items-center mt-3 pt-2 border-t border-amber-100/40 dark:border-amber-900/10 text-[9px] text-slate-400 dark:text-slate-500 font-medium">
+                      <span className={`flex items-center gap-1 ${note.pinned ? 'text-amber-600 dark:text-amber-400 font-semibold' : ''}`}>
+                        <FileText size={9} />
+                        {note.pinned ? 'Pinned Thought' : 'Quick Note'}
+                      </span>
+                      <span>
+                        {new Date(note.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="empty-notes"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="p-6 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-150 dark:border-slate-750"
+              >
+                No quick notes captured yet. Jot something down above!
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
@@ -836,6 +1239,31 @@ export default function App() {
             </select>
           </div>
         </div>
+
+        {/* Toggle Option for Incomplete Tasks only */}
+        <div className="flex items-center justify-between pt-2.5 border-t border-slate-100 dark:border-slate-750/50">
+          <div className="flex flex-col">
+            <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">Show only incomplete</span>
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">Hide tasks that have been checked off</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setShowOnlyIncomplete(prev => !prev);
+              if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                navigator.vibrate(10);
+              }
+            }}
+            className={`w-11 h-6 rounded-full relative transition-all duration-300 flex items-center p-0.5 shrink-0 ${showOnlyIncomplete ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`}
+          >
+            <motion.div 
+              layout
+              className="w-5 h-5 bg-white rounded-full shadow-md"
+              animate={{ x: showOnlyIncomplete ? 20 : 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Main Filtered List */}
@@ -849,6 +1277,7 @@ export default function App() {
             onDelete={handleDeleteTask}
             onEdit={handleEditTask}
             onToggleSubtask={handleToggleSubtask}
+            categories={categories}
             activeFocusTaskId={activeFocusTaskId}
             activeFocusTimeLeft={activeFocusTimeLeft}
             activeFocusTimerMode={activeFocusTimerMode}
@@ -859,12 +1288,71 @@ export default function App() {
             onStopFocus={handleStopFocus}
           />
         ))}
-        {sortedTasks.length === 0 && (
-          <div className="p-12 text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-150 dark:border-slate-750">
-            <Info className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-            No tasks found matching your filters.
-          </div>
-        )}
+        {tasks.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="p-10 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-750/50 shadow-sm max-w-lg mx-auto mt-6 space-y-6"
+          >
+            <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+              {/* Decorative outer glow circles */}
+              <div className="absolute inset-0 bg-blue-500/15 dark:bg-blue-400/5 rounded-full blur-xl animate-pulse" />
+              <div className="absolute w-20 h-20 bg-blue-50 dark:bg-blue-950/20 rounded-full border border-blue-100 dark:border-blue-900/30 flex items-center justify-center" />
+              <div className="absolute w-14 h-14 bg-gradient-to-tr from-blue-500 to-indigo-600 rounded-2xl shadow-lg shadow-blue-500/20 flex items-center justify-center transform rotate-6 hover:rotate-12 transition-transform duration-300">
+                <CheckCircle className="w-7 h-7 text-white stroke-[2.5]" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-6 h-6 bg-amber-400 dark:bg-amber-500 rounded-full flex items-center justify-center shadow-md animate-bounce" style={{ animationDuration: '3s' }}>
+                <Sparkles className="w-3.5 h-3.5 text-white" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-base font-bold text-slate-800 dark:text-white tracking-tight">Your console is beautifully clear</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                No active tasks found. Map out your next objective to focus your mind and design systems that work for you.
+              </p>
+            </div>
+
+            <button
+              onClick={() => openCreateModal('task')}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl shadow-md shadow-blue-500/10 font-bold tracking-wide text-xs cursor-pointer transition-all hover:-translate-y-0.5"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" /> Create Your First Task
+            </button>
+          </motion.div>
+        ) : sortedTasks.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="p-10 text-center bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-200 dark:border-slate-700/85 max-w-lg mx-auto mt-6 space-y-5"
+          >
+            <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
+              <div className="absolute inset-0 bg-slate-100 dark:bg-slate-900 rounded-full blur-md" />
+              <div className="absolute w-16 h-16 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-150 dark:border-slate-700 flex items-center justify-center" />
+              <Search className="w-6 h-6 text-slate-400 dark:text-slate-500" />
+              <X className="absolute bottom-1 right-1 w-4 h-4 text-rose-500 bg-white dark:bg-slate-900 rounded-full border border-rose-100 dark:border-rose-900/60 p-0.5" />
+            </div>
+
+            <div className="space-y-1.5">
+              <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">No matches in your console</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                We couldn't find any tasks matching your filters. Try adjusting your search query, category, or priority level.
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                setTaskSearch('');
+                setTaskCategoryFilter('All');
+                setTaskPriorityFilter('All');
+              }}
+              className="inline-flex items-center gap-1 px-4 py-2 bg-slate-100 hover:bg-slate-150 dark:bg-slate-900 dark:hover:bg-slate-850 text-slate-700 dark:text-slate-300 rounded-xl font-bold text-xs cursor-pointer transition-colors border border-slate-200/50 dark:border-slate-850"
+            >
+              Reset Console Filters
+            </button>
+          </motion.div>
+        ) : null}
       </div>
     </div>
   );
@@ -888,10 +1376,38 @@ export default function App() {
           />
         ))}
         {habits.length === 0 && (
-          <div className="p-12 col-span-full text-center text-slate-400 dark:text-slate-500 bg-white dark:bg-slate-800 rounded-3xl border border-dashed border-slate-150 dark:border-slate-750">
-            <Flame className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
-            No habits active. Start a new habit streak!
-          </div>
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+            className="p-10 text-center bg-white dark:bg-slate-800 rounded-3xl border border-slate-100 dark:border-slate-750/50 shadow-sm max-w-lg mx-auto col-span-full mt-2 space-y-6"
+          >
+            <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+              {/* Decorative outer glow circles */}
+              <div className="absolute inset-0 bg-emerald-500/15 dark:bg-emerald-400/5 rounded-full blur-xl animate-pulse" />
+              <div className="absolute w-20 h-20 bg-emerald-50 dark:bg-emerald-950/20 rounded-full border border-emerald-100 dark:border-emerald-900/30 flex items-center justify-center" />
+              <div className="absolute w-14 h-14 bg-gradient-to-tr from-emerald-500 to-teal-600 rounded-2xl shadow-lg shadow-emerald-500/20 flex items-center justify-center transform -rotate-6 hover:rotate-12 transition-transform duration-300">
+                <Flame className="w-7 h-7 text-white stroke-[2.5]" />
+              </div>
+              <div className="absolute -top-1 -right-1 w-6 h-6 bg-amber-400 dark:bg-amber-500 rounded-full flex items-center justify-center shadow-md animate-bounce" style={{ animationDuration: '4s' }}>
+                <Zap className="w-3.5 h-3.5 text-white fill-current" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-base font-bold text-slate-800 dark:text-white tracking-tight">Consistency builds character</h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed max-w-sm mx-auto">
+                Establish daily or weekly habits that compound over time. Success is the product of small, steady daily routines.
+              </p>
+            </div>
+
+            <button
+              onClick={() => openCreateModal('habit')}
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl shadow-md shadow-emerald-500/10 font-bold tracking-wide text-xs cursor-pointer transition-all hover:-translate-y-0.5"
+            >
+              <Plus className="w-4 h-4 stroke-[2.5]" /> Set Up First Habit
+            </button>
+          </motion.div>
         )}
       </div>
     </div>
@@ -915,6 +1431,162 @@ export default function App() {
       case 'settings':
         return (
           <div className="space-y-6">
+            {/* Task Categories Manager */}
+            <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-750/50 space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                  Manage Task Categories
+                </span>
+                {!showAddCategorySection && (
+                  <button
+                    onClick={() => setShowAddCategorySection(true)}
+                    className="text-xs text-blue-500 hover:text-blue-600 font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Add Category
+                  </button>
+                )}
+              </div>
+
+              {/* Category Add Form */}
+              {showAddCategorySection && (
+                <div className="p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800/60 space-y-3">
+                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">New Category</h4>
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      placeholder="Category name..."
+                      value={newCatName}
+                      onChange={(e) => setNewCatName(e.target.value)}
+                      className="w-full px-3 py-2 text-sm rounded-lg bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white"
+                    />
+                    
+                    {/* Color picker */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase">Color</span>
+                      <div className="flex gap-2 flex-wrap">
+                        {TAILWIND_COLOR_PRESETS.map((colorClass) => (
+                          <button
+                            key={colorClass}
+                            type="button"
+                            onClick={() => setNewCatColor(colorClass)}
+                            className={`w-6 h-6 rounded-full transition-transform ${newCatColor === colorClass ? 'scale-125 ring-2 ring-offset-2 ring-blue-500 dark:ring-offset-slate-900' : 'hover:scale-110'} ${colorClass}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Icon selector */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-400 uppercase">Icon</span>
+                      <div className="flex gap-2 flex-wrap bg-white dark:bg-slate-850 p-2 rounded-lg border border-slate-150 dark:border-slate-700">
+                        {AVAILABLE_ICONS.map((iconName) => (
+                          <button
+                            key={iconName}
+                            type="button"
+                            onClick={() => setNewCatIcon(iconName)}
+                            className={`p-1.5 rounded transition-all ${newCatIcon === iconName ? 'bg-blue-500 text-white' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                          >
+                            {renderCategoryIcon(iconName, "w-4 h-4")}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={() => {
+                          setShowAddCategorySection(false);
+                          setNewCatName('');
+                        }}
+                        className="flex-1 py-1.5 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold rounded-lg"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveNewCategory}
+                        className="flex-1 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg"
+                      >
+                        Create
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Categories List */}
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                {categories.map((cat) => {
+                  const isEditing = editingCatId === cat.id;
+                  return (
+                    <div
+                      key={cat.id}
+                      className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-slate-100/50 dark:border-slate-850/40"
+                    >
+                      {isEditing ? (
+                        <div className="flex-1 flex gap-2 items-center">
+                          <div className={`w-3 h-3 rounded-full shrink-0 ${cat.color}`} />
+                          <input
+                            type="text"
+                            value={editingCatName}
+                            onChange={(e) => setEditingCatName(e.target.value)}
+                            className="flex-1 px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-white"
+                            autoFocus
+                          />
+                          <button
+                            onClick={() => handleUpdateCategoryName(cat.id)}
+                            className="p-1 text-emerald-500 hover:text-emerald-600 font-bold text-xs"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditingCatId(null)}
+                            className="p-1 text-slate-400 hover:text-slate-600 font-bold text-xs"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 ${cat.color || 'bg-blue-500'}`}>
+                              {renderCategoryIcon(cat.icon, "w-4 h-4")}
+                            </div>
+                            <div>
+                              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200">
+                                {cat.name}
+                              </span>
+                              <span className="text-[9px] text-slate-400 block">
+                                {tasks.filter(t => t.category === cat.name).length} tasks
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                setEditingCatId(cat.id);
+                                setEditingCatName(cat.name);
+                              }}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Rename"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteCategory(cat.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Customizable Username */}
             <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-750/50 space-y-3">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
@@ -986,18 +1658,44 @@ export default function App() {
                   <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Dark Mode Contrast</h4>
                   <p className="text-[11px] text-slate-400">Reduce strain in dim environments</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setPreferences(p => ({ ...p, darkMode: !p.darkMode }))}
-                  className={`w-11 h-6 rounded-full relative transition-all duration-300 flex items-center p-0.5 ${preferences.darkMode ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`}
-                >
-                  <motion.div 
-                    layout
-                    className="w-5 h-5 bg-white rounded-full shadow-md"
-                    animate={{ x: preferences.darkMode ? 20 : 0 }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                  />
-                </button>
+                <div className="flex bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200/50 dark:border-slate-800/60 w-fit shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreferences(p => ({ ...p, darkMode: false }));
+                      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                        navigator.vibrate(10);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${preferences.darkMode === false ? 'bg-white dark:bg-slate-800 text-blue-500 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                  >
+                    Light
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreferences(p => ({ ...p, darkMode: true }));
+                      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                        navigator.vibrate(10);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${preferences.darkMode === true ? 'bg-white dark:bg-slate-800 text-blue-500 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                  >
+                    Dark
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPreferences(p => ({ ...p, darkMode: 'Auto' }));
+                      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                        navigator.vibrate(10);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer ${preferences.darkMode === 'Auto' ? 'bg-white dark:bg-slate-800 text-blue-500 shadow-sm' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
+                  >
+                    Auto
+                  </button>
+                </div>
               </div>
 
               <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-750/50">
@@ -1007,13 +1705,42 @@ export default function App() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setPreferences(p => ({ ...p, notificationReminders: !p.notificationReminders }))}
+                  onClick={() => {
+                    setPreferences(p => ({ ...p, notificationReminders: !p.notificationReminders }));
+                    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                      navigator.vibrate(10);
+                    }
+                  }}
                   className={`w-11 h-6 rounded-full relative transition-all duration-300 flex items-center p-0.5 ${preferences.notificationReminders ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`}
                 >
                   <motion.div 
                     layout
                     className="w-5 h-5 bg-white rounded-full shadow-md"
                     animate={{ x: preferences.notificationReminders ? 20 : 0 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-750/50">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Auto-Cleanup Notes</h4>
+                  <p className="text-[11px] text-slate-400">Delete quick thoughts older than 7 days</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPreferences(p => ({ ...p, autoDeleteOldNotes: !(p.autoDeleteOldNotes ?? true) }));
+                    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+                      navigator.vibrate(10);
+                    }
+                  }}
+                  className={`w-11 h-6 rounded-full relative transition-all duration-300 flex items-center p-0.5 ${((preferences.autoDeleteOldNotes ?? true)) ? 'bg-blue-500' : 'bg-slate-200 dark:bg-slate-700'}`}
+                >
+                  <motion.div 
+                    layout
+                    className="w-5 h-5 bg-white rounded-full shadow-md"
+                    animate={{ x: (preferences.autoDeleteOldNotes ?? true) ? 20 : 0 }}
                     transition={{ type: 'spring', stiffness: 300, damping: 20 }}
                   />
                 </button>
@@ -1192,7 +1919,7 @@ export default function App() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setIsCreating(true)}
+            onClick={() => openCreateModal('select')}
             className="flex items-center gap-1.5 px-6 py-3.5 bg-blue-500 hover:bg-blue-600 text-white rounded-full shadow-lg shadow-blue-500/25 font-bold tracking-wide text-xs cursor-pointer"
           >
             <Plus size={16} className="stroke-[3]" />
@@ -1456,6 +2183,7 @@ export default function App() {
         onSaveHabit={handleSaveHabit}
         categories={categories}
         onCreateCategory={handleCreateCategory}
+        initialStage={modalInitialStage}
       />
     </div>
   );
