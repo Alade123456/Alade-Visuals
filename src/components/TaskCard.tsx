@@ -151,38 +151,48 @@ export default function TaskCard({
     : (categoryConfigs[task.category] || { bg: 'bg-slate-100 dark:bg-slate-800/40', color: 'text-slate-600 dark:text-slate-400' });
 
   return (
-    <motion.div
-      layout
-      drag="x"
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={{ left: 0.2, right: 0 }}
-      onDragEnd={(e, info) => {
-        if (info.offset.x < -80) {
-          if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-            navigator.vibrate(60);
+    <div className="relative overflow-hidden rounded-[24px]">
+      {/* Swipe background indicator - visible when swiped left */}
+      <div className="absolute inset-0 bg-gradient-to-l from-rose-500 to-red-600 flex items-center justify-end pr-6 text-white rounded-[24px] pointer-events-none z-0">
+        <div className="flex flex-col items-center justify-center gap-1">
+          <Trash2 className="w-5 h-5 animate-pulse" />
+          <span className="text-[10px] font-black uppercase tracking-widest">Delete</span>
+        </div>
+      </div>
+
+      <motion.div
+        layout
+        drag="x"
+        dragDirectionLock
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={{ left: 0.6, right: 0.05 }}
+        onDragEnd={(e, info) => {
+          if (info.offset.x < -100) {
+            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+              navigator.vibrate(60);
+            }
+            onDelete(task.id);
           }
-          onDelete(task.id);
-        }
-      }}
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={task.completed ? { opacity: 0, x: 140, scale: 0.95 } : { opacity: 0, x: -100, scale: 0.95 }}
-      transition={{ type: 'spring', stiffness: 240, damping: 25 }}
-      id={`task-card-${task.id}`}
-      className={`group relative minimal-card border-l-4 transition-all overflow-hidden ${
-        task.completed 
-          ? 'bg-slate-50/50 shadow-none border-green-500 opacity-80 dark:bg-slate-800/30' 
-          : timerMode !== 'idle'
-            ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-900/5'
-            : isOverdue 
-              ? 'border-red-500' 
-              : task.priority === 'High' || task.priority === 'Urgent'
-                ? 'border-red-500'
-                : task.priority === 'Medium'
-                  ? 'border-yellow-400'
-                  : 'border-blue-500'
-      }`}
-    >
+        }}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={task.completed ? { opacity: 0, x: 140, scale: 0.95 } : { opacity: 0, x: -100, scale: 0.95 }}
+        transition={{ type: 'spring', stiffness: 240, damping: 25 }}
+        id={`task-card-${task.id}`}
+        className={`group relative minimal-card border-l-4 transition-all overflow-hidden z-10 cursor-grab active:cursor-grabbing ${
+          task.completed 
+            ? 'bg-slate-50/50 shadow-none border-green-500 opacity-80 dark:bg-slate-800/30' 
+            : timerMode !== 'idle'
+              ? 'border-indigo-500 bg-indigo-50/10 dark:bg-indigo-900/5'
+              : isOverdue 
+                ? 'border-red-500' 
+                : task.priority === 'High' || task.priority === 'Urgent'
+                  ? 'border-red-500'
+                  : task.priority === 'Medium'
+                    ? 'border-yellow-400'
+                    : 'border-blue-500'
+        }`}
+      >
       <div className="w-full">
         {/* Responsive layout: row on desktop, actions in a beautiful footer row on mobile */}
         <div className="flex flex-col w-full">
@@ -209,42 +219,64 @@ export default function TaskCard({
               </div>
             </div>
 
-            {/* Middle block: Title, Category Badge, and Date Badge on a clean straight line */}
-            <div className="flex-1 min-w-0 flex items-center justify-between gap-4" onClick={() => setIsExpanded(!isExpanded)}>
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                <h4 
-                  id={`task-title-${task.id}`}
-                  className={`text-sm font-bold tracking-tight truncate cursor-pointer select-none transition-colors ${
-                    task.completed 
-                      ? 'text-slate-400 line-through dark:text-slate-500' 
-                      : 'text-slate-800 dark:text-slate-100'
-                  }`}
-                >
-                  {task.name}
-                </h4>
+            {/* Middle block: Title, Category Badge, and Date Badge on a clean responsive layout */}
+            <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4" onClick={() => setIsExpanded(!isExpanded)}>
+              <div className="flex flex-col gap-0.5 min-w-0 flex-1">
+                <div className="flex items-start gap-1.5 min-w-0 w-full">
+                  <h4 
+                    id={`task-title-${task.id}`}
+                    className={`text-sm font-bold tracking-tight cursor-pointer select-none transition-colors break-words whitespace-normal leading-snug flex-1 min-w-0 ${
+                      task.completed 
+                        ? 'text-slate-400 line-through dark:text-slate-500' 
+                        : 'text-slate-800 dark:text-slate-100'
+                    }`}
+                  >
+                    {task.name}
+                  </h4>
+                  {task.pinned && (
+                    <Pin className="w-3 h-3 text-blue-500 fill-blue-500 transform rotate-45 shrink-0 mt-1" />
+                  )}
+                </div>
                   
                 {/* Badges inline */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {task.pinned && (
-                    <Pin className="w-3 h-3 text-blue-500 fill-blue-500 transform rotate-45" />
-                  )}
+                <div className="flex flex-wrap items-center gap-1.5 mt-1">
                   {isOverdue && (
-                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-950/20 px-1 py-0.5 rounded">
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-500 bg-red-50 dark:bg-red-950/20 px-1 py-0.5 rounded shrink-0">
                       <AlertCircle className="w-2.5 h-2.5" />
                       Overdue
                     </span>
                   )}
                   {progress && (
-                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/80 px-1.5 py-0.5 rounded">
+                    <span className="inline-flex items-center gap-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-500 bg-slate-100/50 dark:bg-slate-800/80 px-1.5 py-0.5 rounded shrink-0">
                       <ListTodo className="w-2.5 h-2.5" />
                       {progress.completed}/{progress.total}
                     </span>
                   )}
                 </div>
+
+                {/* Subtle subtask progress bar */}
+                {progress && (
+                  <div className="mt-2 w-full max-w-[180px]" onClick={(e) => e.stopPropagation()}>
+                    <div className="w-full bg-slate-100 dark:bg-slate-800/60 h-1.5 rounded-full overflow-hidden relative">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          progress.pct === 100 
+                            ? 'bg-emerald-500' 
+                            : 'bg-blue-500'
+                        }`} 
+                        style={{ width: `${progress.pct}%` }} 
+                      />
+                    </div>
+                    <div className="flex items-center justify-between text-[9px] text-slate-400 dark:text-slate-500 font-semibold mt-1 tracking-wider uppercase">
+                      <span>Progress</span>
+                      <span>{progress.pct}%</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Badges container on the right side of the straight line */}
-              <div className="flex items-center gap-2 shrink-0">
+              {/* Badges container: Clock and Priority */}
+              <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto mt-0.5 sm:mt-0">
                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border flex items-center gap-1 ${
                   isOverdue 
                     ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400'
@@ -255,7 +287,7 @@ export default function TaskCard({
                 </span>
 
                 {task.priority !== 'Low' && (
-                  <span className={`hidden sm:inline-flex px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider ${priorityColors[task.priority]}`}>
+                  <span className={`px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider ${priorityColors[task.priority]}`}>
                     {task.priority}
                   </span>
                 )}
@@ -357,15 +389,7 @@ export default function TaskCard({
           </div>
         </div>
 
-        {/* Mini Bottom Progress Line (Subtle 1px visual cue for completed subtasks) */}
-        {!isExpanded && progress && (
-          <div className="w-full bg-slate-100 dark:bg-slate-800/40 h-[2px] overflow-hidden">
-            <div 
-              className="bg-blue-500 h-full transition-all duration-300" 
-              style={{ width: `${progress.pct}%` }} 
-            />
-          </div>
-        )}
+
 
         {/* EXPANDED VIEW: Details, Subtasks checklist, and notes */}
         {isExpanded && (
@@ -487,5 +511,6 @@ export default function TaskCard({
         )}
       </div>
     </motion.div>
-  );
+  </div>
+);
 }

@@ -914,10 +914,10 @@ export default function App() {
       {/* Dynamic Profile Greeting Row */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-[24px] leading-[24px] pl-0 ml-0 mr-0 mt-[12px] font-bold text-slate-900 dark:text-white tracking-tight">
             Hello, {displayName || 'User'}
           </h1>
-          <p className="text-slate-500 dark:text-slate-400 text-xs mt-1 italic font-medium">
+          <p className="text-slate-500 dark:text-slate-400 text-[8px] leading-[19px] mt-1 italic font-medium">
             "{quote}"
           </p>
         </div>
