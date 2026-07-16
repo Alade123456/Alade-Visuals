@@ -78,6 +78,8 @@ export interface UserPreferences {
   dailyGoalCompletedDate?: string;
   dailyGoalsHistory?: DailyGoalHistoryItem[];
   autoDeleteOldNotes?: boolean;
+  pomodoroWorkMinutes?: number;
+  pomodoroBreakMinutes?: number;
 }
 
 export interface SmartSuggestion {

@@ -206,7 +206,7 @@ export default function TaskCreationModal({
             exit={{ opacity: 0 }}
             onClick={() => { resetForms(); onClose(); }}
             id="modal-backdrop"
-            className="fixed inset-0 bg-black z-50 pointer-events-auto"
+            className="fixed inset-0 bg-black z-[100] pointer-events-auto"
           />
 
           {/* Bottom Sheet Modal Container */}
@@ -216,7 +216,7 @@ export default function TaskCreationModal({
             exit={{ y: '100%' }}
             transition={{ type: 'spring', damping: 25, stiffness: 220 }}
             id="creation-bottom-sheet"
-            className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl z-50 max-h-[92vh] overflow-y-auto no-scrollbar pb-8 border-t border-slate-100 dark:border-slate-800"
+            className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl z-[100] max-h-[92vh] overflow-y-auto no-scrollbar pb-8 border-t border-slate-100 dark:border-slate-800"
           >
             {/* Header Handle */}
             <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-700 rounded-full mx-auto my-3" />
@@ -641,11 +641,6 @@ export default function TaskCreationModal({
                       />
                     ))}
                   </div>
-                </div>
-
-                {/* Description Helper info */}
-                <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 rounded-[24px] border border-emerald-100/30 text-emerald-800 dark:text-emerald-300 text-xs leading-relaxed">
-                  <strong>Consistency matters:</strong> New habits are easiest to build when anchored to existing routines (e.g. "Right after brushing my teeth"). This application tracks current and best streaks dynamically as you check completion each day.
                 </div>
 
                 {/* Save Buttons */}

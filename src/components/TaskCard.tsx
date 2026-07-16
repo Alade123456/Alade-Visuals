@@ -16,7 +16,7 @@ interface TaskCardProps {
   onToggleComplete: (id: string) => void;
   onTogglePin: (id: string) => void;
   onDelete: (id: string) => void;
-  onEdit: (task: Task) => void;
+  onEdit: (task: Task, updatedName?: string) => void;
   onToggleSubtask: (taskId: string, subtaskId: string) => void;
   categories?: Category[];
   activeFocusTaskId?: string | null;
@@ -27,6 +27,8 @@ interface TaskCardProps {
   onPauseFocus?: () => void;
   onResumeFocus?: () => void;
   onStopFocus?: () => void;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
 const categoryConfigs: Record<string, { icon: React.ComponentType<any>; color: string; bg: string }> = {
@@ -88,9 +90,25 @@ export default function TaskCard({
   onPauseFocus,
   onResumeFocus,
   onStopFocus,
+  isSelected = false,
+  onToggleSelect,
 }: TaskCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const todayStr = formatDate(new Date());
+
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState(task.name);
+
+  useEffect(() => {
+    setEditedName(task.name);
+  }, [task.name]);
+
+  const handleSaveInlineName = () => {
+    if (editedName.trim() && editedName.trim() !== task.name) {
+      onEdit(task, editedName.trim());
+    }
+    setIsEditingName(false);
+  };
   
   // Use either the shared active focus timer state or fallback to idle
   const isCurrentlyFocused = activeFocusTaskId === task.id;
@@ -199,6 +217,24 @@ export default function TaskCard({
           <div className="p-3 px-4 flex items-center justify-between gap-3 w-full">
             {/* Left block: Checkbox and beautifully-aligned Category Icon */}
             <div className="flex items-center gap-2.5 shrink-0">
+              {onToggleSelect && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleSelect(task.id);
+                  }}
+                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition-all cursor-pointer ${
+                    isSelected 
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-500/20' 
+                      : 'border-slate-300 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 bg-white dark:bg-slate-800'
+                  }`}
+                  title="Select task for batch action"
+                >
+                  {isSelected && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </button>
+              )}
+
               <button
                 id={`btn-toggle-task-${task.id}`}
                 onClick={() => onToggleComplete(task.id)}
@@ -220,21 +256,74 @@ export default function TaskCard({
             </div>
 
             {/* Middle block: Title, Category Badge, and Date Badge on a clean responsive layout */}
-            <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4" onClick={() => setIsExpanded(!isExpanded)}>
+            <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4" onClick={() => !isEditingName && setIsExpanded(!isExpanded)}>
               <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                <div className="flex items-start gap-1.5 min-w-0 w-full">
-                  <h4 
-                    id={`task-title-${task.id}`}
-                    className={`text-sm font-bold tracking-tight cursor-pointer select-none transition-colors break-words whitespace-normal leading-snug flex-1 min-w-0 ${
-                      task.completed 
-                        ? 'text-slate-400 line-through dark:text-slate-500' 
-                        : 'text-slate-800 dark:text-slate-100'
-                    }`}
-                  >
-                    {task.name}
-                  </h4>
-                  {task.pinned && (
-                    <Pin className="w-3 h-3 text-blue-500 fill-blue-500 transform rotate-45 shrink-0 mt-1" />
+                <div className="flex items-center gap-1.5 min-w-0 w-full" onClick={(e) => e.stopPropagation()}>
+                  {isEditingName ? (
+                    <div className="flex items-center gap-1.5 w-full">
+                      <input
+                        type="text"
+                        value={editedName}
+                        onChange={(e) => setEditedName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleSaveInlineName();
+                          } else if (e.key === 'Escape') {
+                            setIsEditingName(false);
+                            setEditedName(task.name);
+                          }
+                        }}
+                        autoFocus
+                        className="flex-1 bg-white dark:bg-slate-800 border border-indigo-350 dark:border-indigo-700 rounded-lg px-2 py-1 text-sm font-bold text-slate-850 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-w-0"
+                      />
+                      <button
+                        onClick={handleSaveInlineName}
+                        className="p-1 text-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-lg transition-colors shrink-0 cursor-pointer"
+                        title="Save name"
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsEditingName(false);
+                          setEditedName(task.name);
+                        }}
+                        className="p-1 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors shrink-0 text-xs font-bold cursor-pointer"
+                        title="Cancel"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 min-w-0 w-full group/title">
+                      <h4 
+                        id={`task-title-${task.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsExpanded(!isExpanded);
+                        }}
+                        className={`text-sm font-bold tracking-tight cursor-pointer select-none transition-colors break-words whitespace-normal leading-snug flex-1 min-w-0 ${
+                          task.completed 
+                            ? 'text-slate-400 line-through dark:text-slate-500' 
+                            : 'text-slate-800 dark:text-slate-100'
+                        }`}
+                      >
+                        {task.name}
+                      </h4>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsEditingName(true);
+                        }}
+                        className="p-1 text-slate-400 hover:text-indigo-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all opacity-0 group-hover/title:opacity-100 focus:opacity-100 shrink-0 self-center cursor-pointer"
+                        title="Inline Edit Name"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                      {task.pinned && (
+                        <Pin className="w-3 h-3 text-blue-500 fill-blue-500 transform rotate-45 shrink-0 mt-1" />
+                      )}
+                    </div>
                   )}
                 </div>
                   
@@ -313,7 +402,7 @@ export default function TaskCard({
               </button>
               <button
                 id={`btn-edit-task-${task.id}`}
-                onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+                onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }}
                 title="Edit Task"
                 className="p-1 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >
@@ -364,7 +453,7 @@ export default function TaskCard({
               </button>
               <button
                 id={`btn-edit-task-${task.id}-mobile`}
-                onClick={(e) => { e.stopPropagation(); onEdit(task); }}
+                onClick={(e) => { e.stopPropagation(); setIsEditingName(true); }}
                 title="Edit Task"
                 className="p-1.5 text-slate-400 hover:text-blue-500 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
               >

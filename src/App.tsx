@@ -25,6 +25,7 @@ import AchievementsView from './components/AchievementsView';
 import TaskCreationModal from './components/TaskCreationModal';
 import SignIn from './components/SignIn';
 import AnimatedCounter from './components/AnimatedCounter';
+import DailySummaryModal from './components/DailySummaryModal';
 import confetti from 'canvas-confetti';
 import { useSupabaseArraySync, useSupabaseObjectSync } from './useSupabaseSync';
 import { useTaskReminders } from './useTaskReminders';
@@ -48,6 +49,28 @@ export default function App() {
   // --- AUTH STATE ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isAppInitializing, setIsAppInitializing] = useState(true);
+
+  useEffect(() => {
+    if (!authLoading) {
+      const timer = setTimeout(() => {
+        setIsAppInitializing(false);
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading]);
+
+  // Trigger Daily Summary Modal when the app is initialized and user is authenticated
+  useEffect(() => {
+    if (!isAppInitializing && isAuthenticated) {
+      const todayStr = formatDate(new Date());
+      const lastShownDate = localStorage.getItem('goalsmi_last_summary_shown_date');
+      if (lastShownDate !== todayStr) {
+        setIsDailySummaryOpen(true);
+      }
+    }
+  }, [isAppInitializing, isAuthenticated]);
+
   const [displayName, setDisplayName] = useState(() => {
     return localStorage.getItem('aura_local_username') || '';
   });
@@ -152,6 +175,7 @@ export default function App() {
   const [profileSubTab, setProfileSubTab] = useState<'achievements' | 'analytics' | 'calendar' | 'settings'>('achievements');
   const [isCreating, setIsCreating] = useState(false);
   const [modalInitialStage, setModalInitialStage] = useState<'select' | 'task' | 'habit'>('select');
+  const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
 
   const openCreateModal = (stage: 'select' | 'task' | 'habit' = 'select') => {
     setModalInitialStage(stage);
@@ -170,6 +194,7 @@ export default function App() {
   const [taskSort, setTaskSort] = useState<'time' | 'priority' | 'completion'>('time');
   const [showOnlyIncomplete, setShowOnlyIncomplete] = useState(false);
   const [quickNoteText, setQuickNoteText] = useState('');
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   // Interactive custom notifications/toasts
   const [notification, setNotification] = useState<{ title: string; message: string } | null>(null);
@@ -180,6 +205,9 @@ export default function App() {
   const [activeFocusTimerStatus, setActiveFocusTimerStatus] = useState<'paused' | 'running'>('paused');
   const [activeFocusTimeLeft, setActiveFocusTimeLeft] = useState(25 * 60);
   const [showFocusOverlay, setShowFocusOverlay] = useState(false);
+  const [showTimerEdit, setShowTimerEdit] = useState(false);
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   // Sync to Supabase in real-time while preserving optimistic UI
   useSupabaseArraySync('tasks', tasks, setTasks, isAuthenticated);
@@ -284,6 +312,80 @@ export default function App() {
     };
   }, [preferences.darkMode]);
 
+  const unlockAudio = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContextClass();
+      }
+      
+      const ctx = audioContextRef.current;
+      if (ctx.state === 'suspended') {
+        ctx.resume().then(() => {
+          // Play a very short silent note to trigger actual hardware playback unlock
+          const osc = ctx.createOscillator();
+          const gainNode = ctx.createGain();
+          gainNode.gain.setValueAtTime(0, ctx.currentTime);
+          osc.connect(gainNode);
+          gainNode.connect(ctx.destination);
+          osc.start(0);
+          osc.stop(0.01);
+          setIsAudioUnlocked(true);
+        }).catch(err => {
+          console.warn("Failed to resume audio context:", err);
+        });
+      } else {
+        setIsAudioUnlocked(true);
+      }
+    } catch (error) {
+      console.warn("Failed to unlock audio context:", error);
+    }
+  };
+
+  const playTimerCompleteSound = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass) return;
+      
+      const ctx = audioContextRef.current || new AudioContextClass();
+      if (!audioContextRef.current) {
+        audioContextRef.current = ctx;
+      }
+      
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+
+      const playNote = (frequency: number, startTime: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(frequency, startTime);
+        
+        gainNode.gain.setValueAtTime(0, startTime);
+        gainNode.gain.linearRampToValueAtTime(0.6, startTime + 0.04);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        
+        osc.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        
+        osc.start(startTime);
+        osc.stop(startTime + duration);
+      };
+
+      const now = ctx.currentTime;
+      playNote(523.25, now, 0.4);        // C5
+      playNote(659.25, now + 0.12, 0.4); // E5
+      playNote(783.99, now + 0.24, 0.4); // G5
+      playNote(1046.50, now + 0.36, 0.8); // C6
+    } catch (error) {
+      console.warn("Could not play synthesized audio alert:", error);
+    }
+  };
+
   // Focus Timer Interval
   useEffect(() => {
     let interval: any;
@@ -292,17 +394,20 @@ export default function App() {
         setActiveFocusTimeLeft(prev => prev - 1);
       }, 1000);
     } else if (activeFocusTimeLeft === 0 && activeFocusTaskId) {
+      // Play beautiful alert sound!
+      playTimerCompleteSound();
+
       // Auto-switch mode on complete
       if (activeFocusTimerMode === 'work') {
         setActiveFocusTimerMode('break');
-        setActiveFocusTimeLeft(5 * 60); // 5 min break
+        setActiveFocusTimeLeft((preferences.pomodoroBreakMinutes ?? 5) * 60); // Break duration
         setActiveFocusTimerStatus('paused');
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
           navigator.vibrate([100, 50, 100, 50, 100]);
         }
       } else if (activeFocusTimerMode === 'break') {
         setActiveFocusTimerMode('work');
-        setActiveFocusTimeLeft(25 * 60); // 25 min work
+        setActiveFocusTimeLeft((preferences.pomodoroWorkMinutes ?? 25) * 60); // Work duration
         setActiveFocusTimerStatus('paused');
         if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
           navigator.vibrate([80, 40, 80]);
@@ -310,13 +415,21 @@ export default function App() {
       }
     }
     return () => clearInterval(interval);
-  }, [activeFocusTimerStatus, activeFocusTimeLeft, activeFocusTimerMode, activeFocusTaskId]);
+  }, [activeFocusTimerStatus, activeFocusTimeLeft, activeFocusTimerMode, activeFocusTaskId, preferences.pomodoroWorkMinutes, preferences.pomodoroBreakMinutes]);
+
+  // Keep initial active focus time left in sync with user preferences when idle
+  useEffect(() => {
+    if (activeFocusTimerMode === 'idle') {
+      setActiveFocusTimeLeft((preferences.pomodoroWorkMinutes ?? 25) * 60);
+    }
+  }, [preferences.pomodoroWorkMinutes, activeFocusTimerMode]);
 
   const handleStartFocus = (taskId: string) => {
+    unlockAudio();
     setActiveFocusTaskId(taskId);
     setActiveFocusTimerMode('work');
     setActiveFocusTimerStatus('running');
-    setActiveFocusTimeLeft(25 * 60);
+    setActiveFocusTimeLeft((preferences.pomodoroWorkMinutes ?? 25) * 60);
     setShowFocusOverlay(true);
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate([80, 40, 80]);
@@ -324,6 +437,7 @@ export default function App() {
   };
 
   const handlePauseFocus = () => {
+    unlockAudio();
     setActiveFocusTimerStatus('paused');
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(40);
@@ -331,6 +445,7 @@ export default function App() {
   };
 
   const handleResumeFocus = () => {
+    unlockAudio();
     setActiveFocusTimerStatus('running');
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(40);
@@ -341,7 +456,7 @@ export default function App() {
     setActiveFocusTaskId(null);
     setActiveFocusTimerMode('idle');
     setActiveFocusTimerStatus('paused');
-    setActiveFocusTimeLeft(25 * 60);
+    setActiveFocusTimeLeft((preferences.pomodoroWorkMinutes ?? 25) * 60);
     setShowFocusOverlay(false);
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate([40, 100]);
@@ -605,10 +720,79 @@ export default function App() {
 
   const handleDeleteTask = (id: string) => {
     setTasks(prev => prev.filter(t => t.id !== id));
+    setSelectedTaskIds(prev => prev.filter(taskId => taskId !== id));
   };
 
-  const handleEditTask = (task: Task) => {
-    const newName = prompt("Edit Task Name:", task.name);
+  const handleToggleSelectAll = () => {
+    const allFilteredSelected = sortedTasks.length > 0 && sortedTasks.every(t => selectedTaskIds.includes(t.id));
+    if (allFilteredSelected) {
+      setSelectedTaskIds(prev => prev.filter(id => !sortedTasks.some(t => t.id === id)));
+    } else {
+      const newSelections = sortedTasks.map(t => t.id);
+      setSelectedTaskIds(prev => Array.from(new Set([...prev, ...newSelections])));
+    }
+  };
+
+  const handleToggleSelectTask = (id: string) => {
+    setSelectedTaskIds(prev => 
+      prev.includes(id) ? prev.filter(taskId => taskId !== id) : [...prev, id]
+    );
+  };
+
+  const handleBatchDeleteTasks = () => {
+    if (selectedTaskIds.length === 0) return;
+    const confirmDelete = window.confirm(`Are you sure you want to delete the ${selectedTaskIds.length} selected tasks?`);
+    if (confirmDelete) {
+      setTasks(prev => prev.filter(t => !selectedTaskIds.includes(t.id)));
+      setSelectedTaskIds([]);
+    }
+  };
+
+  const handleBatchCompleteTasks = () => {
+    if (selectedTaskIds.length === 0) return;
+    let triggeredConfetti = false;
+    const updatedTasks = tasks.map(t => {
+      if (selectedTaskIds.includes(t.id)) {
+        const isNowCompleted = true;
+        if (isNowCompleted && !t.completed) {
+          const completedToday = tasks.some(task => task.completed && task.completedAt && task.completedAt.startsWith(todayStr));
+          const lastConfettiDate = localStorage.getItem('aura_last_confetti_date');
+          
+          if (!completedToday && lastConfettiDate !== todayStr) {
+            triggeredConfetti = true;
+            localStorage.setItem('aura_last_confetti_date', todayStr);
+          }
+        }
+        return { 
+          ...t, 
+          completed: true, 
+          completedAt: t.completed ? t.completedAt : new Date().toISOString()
+        };
+      }
+      return t;
+    });
+
+    setTasks(updatedTasks);
+    setSelectedTaskIds([]);
+
+    if (triggeredConfetti) {
+      confetti({
+        particleCount: 80,
+        angle: 60,
+        spread: 55,
+        origin: { x: 0, y: 0.6 }
+      });
+      confetti({
+        particleCount: 80,
+        angle: 120,
+        spread: 55,
+        origin: { x: 1, y: 0.6 }
+      });
+    }
+  };
+
+  const handleEditTask = (task: Task, updatedName?: string) => {
+    const newName = updatedName !== undefined ? updatedName : prompt("Edit Task Name:", task.name);
     if (newName !== null && newName.trim()) {
       setTasks(prev => prev.map(t => t.id === task.id ? { ...t, name: newName.trim() } : t));
     }
@@ -912,14 +1096,24 @@ export default function App() {
     <div className="p-6 space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       
       {/* Dynamic Profile Greeting Row */}
-      <div className="flex justify-between items-center">
-        <div>
+      <div className="flex justify-between items-start">
+        <div className="space-y-1">
           <h1 className="text-[24px] leading-[24px] pl-0 ml-0 mr-0 mt-[12px] font-bold text-slate-900 dark:text-white tracking-tight">
             Hello, {displayName || 'User'}
           </h1>
           <p className="text-slate-500 dark:text-slate-400 text-[8px] leading-[19px] mt-1 italic font-medium">
             "{quote}"
           </p>
+          <div className="pt-1.5">
+            <button
+              id="btn-reopen-summary"
+              onClick={() => setIsDailySummaryOpen(true)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-950/65 border border-indigo-100/40 dark:border-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-full text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer"
+            >
+              <Sparkles className="w-3 h-3 animate-pulse text-indigo-500" />
+              Daily Summary
+            </button>
+          </div>
         </div>
         {renderUserAvatar(avatarUrl, displayName, "w-13 h-13 text-2xl")}
       </div>
@@ -1289,6 +1483,80 @@ export default function App() {
         </div>
       </div>
 
+      {/* Selection Control Bar & Action Drawer */}
+      {sortedTasks.length > 0 && (
+        <div className="flex items-center justify-between px-1">
+          <button
+            type="button"
+            onClick={handleToggleSelectAll}
+            className="flex items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-blue-500 dark:hover:text-blue-400 transition-colors cursor-pointer select-none"
+          >
+            <div className={`flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded border transition-all ${
+              sortedTasks.length > 0 && sortedTasks.every(t => selectedTaskIds.includes(t.id))
+                ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm shadow-indigo-500/20' 
+                : 'border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-400 dark:hover:border-indigo-500'
+            }`}>
+              {sortedTasks.length > 0 && sortedTasks.every(t => selectedTaskIds.includes(t.id)) && <Check className="w-3 h-3 stroke-[3]" />}
+            </div>
+            <span>
+              {sortedTasks.every(t => selectedTaskIds.includes(t.id)) 
+                ? 'Deselect All Shown' 
+                : `Select All Shown (${sortedTasks.length})`}
+            </span>
+          </button>
+          {selectedTaskIds.length > 0 && (
+            <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
+              {selectedTaskIds.length} selected
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Batch Actions Bar */}
+      <AnimatePresence>
+        {selectedTaskIds.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -10 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -10 }}
+            className="overflow-hidden"
+          >
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 bg-indigo-50/45 dark:bg-indigo-950/20 border border-indigo-100/40 dark:border-indigo-900/30 rounded-2xl shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-white text-[11px] font-black">
+                  {selectedTaskIds.length}
+                </span>
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                  tasks selected for batch actions
+                </span>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <button
+                  onClick={handleBatchCompleteTasks}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                  Complete
+                </button>
+                <button
+                  onClick={handleBatchDeleteTasks}
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 bg-rose-500 hover:bg-rose-600 active:scale-95 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete
+                </button>
+                <button
+                  onClick={() => setSelectedTaskIds([])}
+                  className="px-3.5 py-2 bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-700 active:scale-95 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Main Filtered List */}
       <div className="space-y-3">
         <AnimatePresence mode="popLayout">
@@ -1317,6 +1585,8 @@ export default function App() {
                 onPauseFocus={handlePauseFocus}
                 onResumeFocus={handleResumeFocus}
                 onStopFocus={handleStopFocus}
+                isSelected={selectedTaskIds.includes(task.id)}
+                onToggleSelect={handleToggleSelectTask}
               />
             </motion.div>
           ))}
@@ -1788,6 +2058,43 @@ export default function App() {
                   />
                 </button>
               </div>
+
+              <div className="pt-4 border-t border-slate-100 dark:border-slate-750/50 space-y-3">
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200">Custom Pomodoro Timer</h4>
+                  <p className="text-[11px] text-slate-400">Set default durations for focus and rest sessions</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Focus Session (Min)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={180}
+                      value={preferences.pomodoroWorkMinutes ?? 25}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(180, parseInt(e.target.value) || 25));
+                        setPreferences(p => ({ ...p, pomodoroWorkMinutes: val }));
+                      }}
+                      className="w-full px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-750 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider block">Short Break (Min)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={preferences.pomodoroBreakMinutes ?? 5}
+                      onChange={(e) => {
+                        const val = Math.max(1, Math.min(60, parseInt(e.target.value) || 5));
+                        setPreferences(p => ({ ...p, pomodoroBreakMinutes: val }));
+                      }}
+                      className="w-full px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-750 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Account Management */}
@@ -1893,23 +2200,27 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen bg-white dark:bg-slate-900 flex flex-col items-center justify-center p-4">
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 flex flex-col items-center justify-center p-6 transition-colors duration-300">
         <motion.div 
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.5 }}
-          className="text-center"
+          className="text-center space-y-6"
         >
-          <motion.div
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="w-20 h-20 bg-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/25"
-          >
-            <span className="text-white text-4xl font-bold font-sans">G</span>
-          </motion.div>
-          <h1 className="text-4xl font-bold text-slate-900 dark:text-white mb-2 tracking-tight">GoalsMi</h1>
-          <p className="text-slate-500 dark:text-slate-400 font-medium text-xs">Your system companion</p>
+          <div className="relative flex items-center justify-center w-24 h-24 mx-auto">
+            {/* Spinning gradient ring */}
+            <motion.div 
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 2, ease: "linear" }}
+              className="absolute inset-0 rounded-3xl bg-gradient-to-tr from-blue-500 via-indigo-500 to-purple-600 opacity-80"
+            />
+            <div className="absolute inset-1 rounded-2xl bg-white dark:bg-slate-900 flex items-center justify-center">
+              <span className="text-blue-500 dark:text-blue-400 text-5xl font-black font-sans select-none tracking-tighter">G</span>
+            </div>
+          </div>
+          <div>
+            <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">GoalsMi</h1>
+            <p className="text-slate-400 dark:text-slate-500 font-bold text-xs uppercase tracking-wider mt-1.5 animate-pulse">Your system companion</p>
+          </div>
         </motion.div>
       </div>
     );
@@ -1917,6 +2228,108 @@ export default function App() {
 
   if (!isAuthenticated) {
     return <SignIn onSignIn={handleSignIn} />;
+  }
+
+  if (isAppInitializing) {
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-300 relative flex flex-col justify-between">
+        
+        {/* Skeleton Header / Branding Overlay */}
+        <div className="max-w-xl w-full mx-auto p-6 space-y-6 flex-1 flex flex-col pb-32">
+          
+          {/* Header Row Skeleton */}
+          <div className="flex justify-between items-center mt-3">
+            <div className="space-y-2">
+              <div className="h-7 w-36 bg-slate-200 dark:bg-slate-800 rounded-xl animate-pulse" />
+              <div className="h-3 w-56 bg-slate-200/50 dark:bg-slate-800/40 rounded-lg animate-pulse" />
+            </div>
+            <div className="w-12 h-12 bg-slate-200 dark:bg-slate-800 rounded-2xl animate-pulse shadow-sm" />
+          </div>
+
+          {/* Progress Card Skeleton */}
+          <div className="bg-gradient-to-br from-slate-200/50 to-slate-200/20 dark:from-slate-900/40 dark:to-slate-900/10 border border-slate-200/40 dark:border-slate-800/30 p-6 rounded-3xl relative overflow-hidden flex items-center justify-between shadow-sm animate-pulse">
+            <div className="space-y-3 flex-1 pr-4">
+              <div className="w-24 h-4 bg-slate-300/40 dark:bg-slate-800/70 rounded-full" />
+              <div className="w-36 h-6 bg-slate-300/60 dark:bg-slate-800/90 rounded-xl" />
+              <div className="w-48 h-3.5 bg-slate-200 dark:bg-slate-850 rounded-lg" />
+            </div>
+            <div className="w-20 h-20 rounded-full border-4 border-slate-200 dark:border-slate-800 flex items-center justify-center relative shrink-0">
+              <div className="w-12 h-12 rounded-full bg-slate-200/50 dark:bg-slate-800/40" />
+            </div>
+          </div>
+
+          {/* Central Branded Sync Status Drawer */}
+          <div className="bg-white dark:bg-slate-900 border border-slate-200/60 dark:border-slate-800/80 p-5 rounded-2xl shadow-xl relative overflow-hidden">
+            {/* Elegant top color band */}
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600" />
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 animate-pulse text-indigo-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-500 block">
+                    System Core Sync
+                  </span>
+                  <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded">
+                    Active
+                  </span>
+                </div>
+                <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-1">
+                  Synchronizing GoalsMi companion...
+                </h3>
+                {/* Dynamic Framer Motion Shimmer Progress Bar */}
+                <div className="w-full h-2 bg-slate-100 dark:bg-slate-950 rounded-full mt-3 overflow-hidden relative">
+                  <motion.div
+                    initial={{ left: '-100%' }}
+                    animate={{ left: '100%' }}
+                    transition={{ repeat: Infinity, duration: 1.6, ease: 'easeInOut' }}
+                    className="absolute top-0 h-full w-1/2 bg-gradient-to-r from-transparent via-indigo-500 to-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* List Title Skeleton */}
+          <div className="space-y-3 pt-2">
+            <div className="h-4 w-28 bg-slate-200 dark:bg-slate-800 rounded-md animate-pulse" />
+            
+            {/* Task Item Skeletons */}
+            {[1, 2, 3].map((idx) => (
+              <div 
+                key={idx}
+                className="bg-white/45 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-850 p-4 rounded-2xl flex items-center justify-between gap-4 shadow-sm animate-pulse"
+              >
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="w-5 h-5 rounded-lg border border-slate-300 dark:border-slate-800 bg-slate-100 dark:bg-slate-850 shrink-0" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="h-3.5 w-3/4 bg-slate-200 dark:bg-slate-800 rounded-lg" />
+                    <div className="h-2 w-1/4 bg-slate-150 dark:bg-slate-850 rounded-md" />
+                  </div>
+                </div>
+                <div className="w-14 h-5 bg-slate-150 dark:bg-slate-850 rounded-full shrink-0" />
+              </div>
+            ))}
+          </div>
+
+          {/* Quick Notes Area Skeleton */}
+          <div className="bg-white/45 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-850 p-4 rounded-2xl h-14 flex items-center justify-between animate-pulse">
+            <div className="h-3.5 w-1/3 bg-slate-150 dark:bg-slate-850 rounded-lg" />
+            <div className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-800" />
+          </div>
+
+        </div>
+
+        {/* Skeleton Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 max-w-xl mx-auto bg-white/80 dark:bg-slate-950/80 border-t border-slate-200/40 dark:border-slate-850/40 py-3.5 flex justify-around items-center rounded-t-3xl shadow-lg z-40 backdrop-blur-md animate-pulse">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="w-10 h-10 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+          ))}
+        </div>
+
+      </div>
+    );
   }
 
   return (
@@ -2028,7 +2441,9 @@ export default function App() {
             if (!focusedTask) return null;
             
             // Calculate progress circle stroke
-            const totalDuration = activeFocusTimerMode === 'work' ? 25 * 60 : 5 * 60;
+            const totalDuration = activeFocusTimerMode === 'work' 
+              ? (preferences.pomodoroWorkMinutes ?? 25) * 60 
+              : (preferences.pomodoroBreakMinutes ?? 5) * 60;
             const percentage = (activeFocusTimeLeft / totalDuration) * 100;
             const radius = 90;
             const circumference = 2 * Math.PI * radius;
@@ -2104,6 +2519,117 @@ export default function App() {
                     </div>
                   </div>
 
+                  {/* Quick Timer Adjustments / Direct Edit */}
+                  <div className="flex flex-col items-center gap-3 -mt-3 w-full max-w-xs z-10">
+                    {/* Controls Row */}
+                    <div className="flex items-center gap-2.5 bg-slate-900/60 border border-slate-800/80 px-4 py-1.5 rounded-2xl shadow-inner w-full justify-between">
+                      {activeFocusTimerStatus === 'paused' ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveFocusTimeLeft(prev => Math.max(60, prev - 5 * 60));
+                            }}
+                            className="text-[11px] font-black text-slate-400 hover:text-white px-2 py-1 bg-slate-950/40 hover:bg-slate-950/90 rounded-xl border border-slate-800/80 transition-colors cursor-pointer select-none"
+                            title="Subtract 5 Minutes"
+                          >
+                            -5m
+                          </button>
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {activeFocusTimerMode === 'work' ? 'Work' : 'Break'}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveFocusTimeLeft(prev => Math.min(180 * 60, prev + 5 * 60));
+                            }}
+                            className="text-[11px] font-black text-slate-400 hover:text-white px-2 py-1 bg-slate-950/40 hover:bg-slate-950/90 rounded-xl border border-slate-800/80 transition-colors cursor-pointer select-none"
+                            title="Add 5 Minutes"
+                          >
+                            +5m
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider select-none">
+                          Session Active
+                        </span>
+                      )}
+
+                      {/* Settings Toggle Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowTimerEdit(!showTimerEdit)}
+                        className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer flex items-center gap-1 select-none ${
+                          showTimerEdit 
+                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-500/20' 
+                            : 'bg-slate-950/40 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700'
+                        }`}
+                      >
+                        <Settings className="w-3 h-3" />
+                        {showTimerEdit ? 'Done' : 'Edit Default'}
+                      </button>
+                    </div>
+
+                    {/* Default Settings Inputs Drawer */}
+                    <AnimatePresence>
+                      {showTimerEdit && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0, y: -5 }}
+                          animate={{ opacity: 1, height: 'auto', y: 0 }}
+                          exit={{ opacity: 0, height: 0, y: -5 }}
+                          className="w-full bg-slate-900/90 border border-slate-800 p-4 rounded-2xl space-y-3 shadow-xl overflow-hidden"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block">
+                              Timer Settings
+                            </span>
+                            <span className="text-[9px] text-slate-500 font-semibold">
+                              Saved automatically
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Work Session</label>
+                              <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={180}
+                                  value={preferences.pomodoroWorkMinutes ?? 25}
+                                  onChange={(e) => {
+                                    const val = Math.max(1, Math.min(180, parseInt(e.target.value) || 25));
+                                    setPreferences(p => ({ ...p, pomodoroWorkMinutes: val }));
+                                  }}
+                                  className="w-full bg-transparent px-2 py-1 text-xs font-mono font-bold text-slate-200 outline-none text-center"
+                                />
+                                <span className="text-[10px] font-bold text-slate-500 pr-2">min</span>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block">Break Period</label>
+                              <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+                                <input
+                                  type="number"
+                                  min={1}
+                                  max={60}
+                                  value={preferences.pomodoroBreakMinutes ?? 5}
+                                  onChange={(e) => {
+                                    const val = Math.max(1, Math.min(60, parseInt(e.target.value) || 5));
+                                    setPreferences(p => ({ ...p, pomodoroBreakMinutes: val }));
+                                  }}
+                                  className="w-full bg-transparent px-2 py-1 text-xs font-mono font-bold text-slate-200 outline-none text-center"
+                                />
+                                <span className="text-[10px] font-bold text-slate-500 pr-2">min</span>
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+
                   {/* Highlighted Task Card Wrapper */}
                   <div className="w-full bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-2xl relative overflow-hidden ring-2 ring-indigo-500/30">
                     <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-500" />
@@ -2167,6 +2693,52 @@ export default function App() {
 
                 {/* Bottom Control Buttons */}
                 <div className="w-full max-w-lg flex flex-col gap-3 mb-4">
+                  
+                  {/* Browser Audio Permission / Compatibility Status */}
+                  <div className="w-full bg-slate-900/70 border border-slate-800/80 p-3.5 rounded-2xl flex flex-col gap-2.5 shadow-xl">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`h-2 w-2 rounded-full relative ${isAudioUnlocked ? 'bg-emerald-500' : 'bg-amber-400'}`}>
+                          {!isAudioUnlocked && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>}
+                          <span className={`relative inline-flex rounded-full h-2 w-2 ${isAudioUnlocked ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                        </span>
+                        <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">
+                          {isAudioUnlocked ? '🔔 Audio Notifications Permitted' : '⚠️ Audio Permission Pending'}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">Mobile Compatibility</span>
+                    </div>
+                    
+                    {!isAudioUnlocked ? (
+                      <div>
+                        <p className="text-[10px] text-slate-400 leading-normal mb-2.5">
+                          Mobile browsers require a touch gesture to allow audio alerts to ring in the background. Tap below to permit sound.
+                        </p>
+                        <button
+                          onClick={() => {
+                            unlockAudio();
+                            setTimeout(() => playTimerCompleteSound(), 100);
+                          }}
+                          className="w-full bg-amber-500 hover:bg-amber-600 active:scale-[0.98] text-slate-950 py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+                        >
+                          🔓 Request & Test Alarm Audio
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3 bg-slate-950/40 p-2 rounded-xl border border-slate-850">
+                        <button
+                          onClick={playTimerCompleteSound}
+                          className="px-3.5 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 hover:text-white border border-indigo-500/20 hover:border-indigo-500/40 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                        >
+                          🔊 Play Test Ring
+                        </button>
+                        <p className="text-[10px] text-slate-500 font-medium leading-tight">
+                          Success! Audio is unlocked. Alerts will trigger reliably when the timer completes.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex gap-3 justify-center">
                     {/* Pause/Resume Button */}
                     <button
@@ -2227,6 +2799,14 @@ export default function App() {
         categories={categories}
         onCreateCategory={handleCreateCategory}
         initialStage={modalInitialStage}
+      />
+
+      {/* Daily Summary Modal */}
+      <DailySummaryModal 
+        isOpen={isDailySummaryOpen}
+        onClose={() => setIsDailySummaryOpen(false)}
+        tasks={tasks}
+        habits={habits}
       />
     </div>
   );

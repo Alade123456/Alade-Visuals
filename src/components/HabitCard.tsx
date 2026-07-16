@@ -23,17 +23,33 @@ export default function HabitCard({
   const todayStr = formatDate(new Date());
   const isCompletedToday = !!habit.history[todayStr];
 
-  // Calculate past 7 days history
+  // Calculate past 7 days history with streak progression
   const getLast7Days = () => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const dateStr = getOffsetDate(-i);
       const dayName = new Date(Date.now() - i * 24 * 3600 * 1000)
         .toLocaleDateString('en-US', { weekday: 'narrow' });
+      
+      // Calculate streak on this historical date
+      let streakOnDate = 0;
+      let checkDate = new Date(Date.now() - i * 24 * 3600 * 1000);
+      while (true) {
+        const dateKey = formatDate(checkDate);
+        if (habit.history[dateKey]) {
+          streakOnDate++;
+          // Move to previous day
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+
       days.push({
         dateStr,
         dayName,
         completed: !!habit.history[dateStr],
+        streak: streakOnDate,
         isToday: i === 0
       });
     }
@@ -46,6 +62,42 @@ export default function HabitCard({
   const totalLogged = Object.keys(habit.history).length;
   const totalCompleted = Object.values(habit.history).filter(Boolean).length;
   const completionRate = totalLogged > 0 ? Math.round((totalCompleted / totalLogged) * 100) : 0;
+
+  // Streak Progression Spline Calculations
+  const streaks = last7Days.map(d => d.streak);
+  const maxStreakInWindow = Math.max(...streaks);
+  const chartMax = Math.max(maxStreakInWindow, 1);
+
+  const width = 280;
+  const height = 52;
+  const paddingX = 14;
+  const points = last7Days.map((item, index) => {
+    const x = paddingX + index * 42;
+    const y = 42 - (item.streak / chartMax) * 32;
+    return { x, y, ...item };
+  });
+
+  const getCurvePath = (pts: { x: number, y: number }[]) => {
+    if (pts.length === 0) return '';
+    let d = `M ${pts[0].x} ${pts[0].y}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i];
+      const p1 = pts[i + 1];
+      const cpX1 = p0.x + 14;
+      const cpY1 = p0.y;
+      const cpX2 = p0.x + 28;
+      const cpY2 = p1.y;
+      d += ` C ${cpX1} ${cpY1}, ${cpX2} ${cpY2}, ${p1.x} ${p1.y}`;
+    }
+    return d;
+  };
+
+  const curvePath = getCurvePath(points);
+  const areaPath = curvePath 
+    ? `${curvePath} L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z` 
+    : '';
+
+  const gradientId = `streak-grad-${habit.id}`;
 
   const getStreakColor = (streak: number) => {
     if (streak >= 10) return 'text-yellow-400 fill-yellow-400 drop-shadow-sm'; // Gold
@@ -113,45 +165,140 @@ export default function HabitCard({
         </button>
       </div>
 
-      {/* Mini Progress Graph / 7-Day Spark Row */}
+      {/* Weekly Mini-Chart / Streak Momentum Progression */}
       <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-850">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Weekly Progress</span>
-          <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-            {totalCompleted} of {totalLogged} logged days
+        <div className="flex justify-between items-center mb-1.5">
+          <div className="flex items-center gap-1">
+            <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
+            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Streak Momentum</span>
+          </div>
+          <span className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 rounded">
+            Peak: {maxStreakInWindow}d
           </span>
         </div>
 
-        <div className="flex justify-between gap-1.5 bg-slate-50 dark:bg-slate-850/50 p-2 rounded-xl">
-          {last7Days.map((day, idx) => (
-            <div 
-              key={idx} 
-              className="flex-1 flex flex-col items-center gap-1"
-            >
-              <span className={`text-[9px] font-semibold ${day.isToday ? 'text-blue-500 dark:text-blue-400 font-bold' : 'text-slate-400 dark:text-slate-500'}`}>
-                {day.dayName}
-              </span>
-              <div
-                id={`spark-circle-${habit.id}-${idx}`}
-                title={day.dateStr + (day.completed ? ' (Completed)' : ' (Pending)')}
-                className={`w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all ${
-                  day.completed
-                    ? 'text-white'
-                    : 'border border-dashed border-slate-300 dark:border-slate-700 text-slate-400'
-                }`}
-                style={{
-                  backgroundColor: day.completed ? habit.colorLabel : 'transparent',
-                  boxShadow: day.completed ? `${habit.colorLabel}20 0px 4px 6px` : 'none'
-                }}
-              >
-                {day.completed ? (
-                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                ) : (
-                  <span className="text-[8px] opacity-70">{day.isToday ? '•' : ''}</span>
+        {/* SVG Sparkline Container */}
+        <div className="relative bg-slate-50/80 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 p-2 rounded-2xl overflow-hidden mt-1">
+          
+          <svg className="w-full overflow-visible" height="52" viewBox="0 0 280 52">
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={habit.colorLabel} stopOpacity="0.25" />
+                <stop offset="100%" stopColor={habit.colorLabel} stopOpacity="0.00" />
+              </linearGradient>
+            </defs>
+            
+            {/* Horizontal guideline */}
+            <line 
+              x1="5" 
+              y1="42" 
+              x2="275" 
+              y2="42" 
+              className="stroke-slate-200 dark:stroke-slate-800/60" 
+              strokeWidth="1" 
+              strokeDasharray="3 3" 
+            />
+            
+            {/* Area under the spline */}
+            {areaPath && (
+              <path 
+                d={areaPath} 
+                fill={`url(#${gradientId})`} 
+                className="transition-all duration-500"
+              />
+            )}
+            
+            {/* Spline line stroke */}
+            {curvePath && (
+              <path 
+                d={curvePath} 
+                fill="none" 
+                stroke={habit.colorLabel} 
+                strokeWidth="2.5" 
+                strokeLinecap="round" 
+                className="transition-all duration-500"
+              />
+            )}
+            
+            {/* Interactive/indicator nodes on the line */}
+            {points.map((pt, idx) => (
+              <g key={idx}>
+                {/* Outer pulsing ring for today's active point */}
+                {pt.isToday && pt.completed && (
+                  <circle 
+                    cx={pt.x} 
+                    cy={pt.y} 
+                    r="6.5" 
+                    fill="none" 
+                    stroke={habit.colorLabel} 
+                    strokeWidth="1.5"
+                    className="animate-pulse"
+                  />
                 )}
+                {/* Node circle */}
+                <circle 
+                  cx={pt.x} 
+                  cy={pt.y} 
+                  r={pt.completed ? "4.5" : "3"} 
+                  fill={pt.completed ? habit.colorLabel : "transparent"} 
+                  stroke={pt.completed ? "none" : habit.colorLabel} 
+                  strokeWidth={pt.completed ? "0" : "1.5"}
+                  className="transition-all duration-300"
+                />
+                
+                {/* Small indicator text showing the streak number if greater than 0 */}
+                {pt.completed && pt.streak > 0 && (
+                  <text 
+                    x={pt.x} 
+                    y={pt.y - 8} 
+                    textAnchor="middle" 
+                    className="text-[9px] font-black font-mono" 
+                    fill={habit.colorLabel}
+                  >
+                    {pt.streak}
+                  </text>
+                )}
+              </g>
+            ))}
+          </svg>
+          
+          {/* Weekday indicators aligned perfectly with chart nodes */}
+          <div className="flex justify-between px-1.5 mt-1 text-[9px] font-bold text-slate-400 dark:text-slate-500 select-none">
+            {last7Days.map((day, idx) => (
+              <div 
+                key={idx} 
+                className={`w-7 text-center flex flex-col items-center gap-0.5 ${
+                  day.isToday 
+                    ? 'text-blue-500 dark:text-blue-400 font-extrabold' 
+                    : day.completed 
+                      ? 'text-slate-600 dark:text-slate-300' 
+                      : 'text-slate-400/80 dark:text-slate-600'
+                }`}
+              >
+                <span>{day.dayName}</span>
+                {/* Tiny status indicator */}
+                <span 
+                  className={`h-1 w-1 rounded-full ${
+                    day.completed 
+                      ? 'bg-emerald-500' 
+                      : 'bg-transparent'
+                  }`}
+                  style={{ backgroundColor: day.completed ? habit.colorLabel : undefined }}
+                />
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+
+        </div>
+        
+        {/* Total stats sub-indicator */}
+        <div className="flex justify-between items-center mt-1.5 px-1">
+          <span className="text-[9px] font-medium text-slate-400 dark:text-slate-500">
+            {totalCompleted} of {totalLogged} logged days
+          </span>
+          <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase">
+            Consistency: {completionRate}%
+          </span>
         </div>
       </div>
 

@@ -429,12 +429,6 @@ export default function SignIn({ onSignIn }: SignInProps) {
               <span>Continue with Google</span>
             </button>
             
-            <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-xl text-[11px] text-amber-800 dark:text-amber-300 text-left leading-relaxed">
-              <span className="font-bold block mb-1">Getting "redirect_uri_mismatch"?</span>
-              1. In <b>Google Cloud Console</b>, add <code className="bg-amber-100 dark:bg-amber-900/50 px-1 py-0.5 rounded">https://[YOUR_PROJECT_ID].supabase.co/auth/v1/callback</code> to Authorized Redirect URIs.<br/>
-              2. In <b>Supabase Dashboard</b> (Authentication &gt; URL Configuration), add <code className="bg-amber-100 dark:bg-amber-900/50 px-1 py-0.5 rounded">{typeof window !== 'undefined' ? `${window.location.origin}/auth-callback` : 'this site'}</code> to Redirect URLs.
-            </div>
-            
             <div className="text-center mt-6">
               <button
                 type="button"

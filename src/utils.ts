@@ -322,7 +322,9 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   dailyGoalDate: '',
   dailyGoalCompleted: false,
   dailyGoalCompletedDate: '',
-  autoDeleteOldNotes: true
+  autoDeleteOldNotes: true,
+  pomodoroWorkMinutes: 25,
+  pomodoroBreakMinutes: 5
 };
 
 // Generate helpful smart notifications / suggestions based on tasks & habits state
