@@ -12,7 +12,7 @@ import { Task, Habit, Category, Achievement, UserPreferences, SmartSuggestion, P
 import { 
   getInitialTasks, getInitialHabits, INITIAL_ACHIEVEMENTS, 
   DEFAULT_CATEGORIES, DEFAULT_PREFERENCES, PRODUCTIVITY_QUOTES,
-  getSmartSuggestions, formatDate, getOffsetDate, formatTimeStr 
+  getSmartSuggestions, getRecommendedTask, formatDate, getOffsetDate, formatTimeStr 
 } from './utils';
 
 // Subcomponents
@@ -26,6 +26,7 @@ import TaskCreationModal from './components/TaskCreationModal';
 import SignIn from './components/SignIn';
 import AnimatedCounter from './components/AnimatedCounter';
 import DailySummaryModal from './components/DailySummaryModal';
+import DailyRolloverModal from './components/DailyRolloverModal';
 import confetti from 'canvas-confetti';
 import { useSupabaseArraySync, useSupabaseObjectSync } from './useSupabaseSync';
 import { useTaskReminders } from './useTaskReminders';
@@ -59,17 +60,6 @@ export default function App() {
       return () => clearTimeout(timer);
     }
   }, [authLoading]);
-
-  // Trigger Daily Summary Modal when the app is initialized and user is authenticated
-  useEffect(() => {
-    if (!isAppInitializing && isAuthenticated) {
-      const todayStr = formatDate(new Date());
-      const lastShownDate = localStorage.getItem('goalsmi_last_summary_shown_date');
-      if (lastShownDate !== todayStr) {
-        setIsDailySummaryOpen(true);
-      }
-    }
-  }, [isAppInitializing, isAuthenticated]);
 
   const [displayName, setDisplayName] = useState(() => {
     return localStorage.getItem('aura_local_username') || '';
@@ -127,6 +117,9 @@ export default function App() {
       supabase.auth.getSession().then(({ data: { session } }) => {
         handleSessionChange(session);
         setAuthLoading(false);
+      }).catch(err => {
+        console.warn('Failed to get session:', err);
+        setAuthLoading(false);
       });
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -176,6 +169,8 @@ export default function App() {
   const [isCreating, setIsCreating] = useState(false);
   const [modalInitialStage, setModalInitialStage] = useState<'select' | 'task' | 'habit'>('select');
   const [isDailySummaryOpen, setIsDailySummaryOpen] = useState(false);
+  const [isDailyRolloverOpen, setIsDailyRolloverOpen] = useState(false);
+  const [rolloverTasks, setRolloverTasks] = useState<Task[]>([]);
 
   const openCreateModal = (stage: 'select' | 'task' | 'habit' = 'select') => {
     setModalInitialStage(stage);
@@ -246,6 +241,61 @@ export default function App() {
       });
     }
   }, []);
+
+  // Daily Sequence: Summary first, then Rollover
+  useEffect(() => {
+    if (!isAppInitializing && isAuthenticated) {
+      const todayStr = formatDate(new Date());
+      const lastSummaryDate = localStorage.getItem('goalsmi_last_summary_shown_date');
+      const lastRolloverDate = localStorage.getItem('goalsmi_last_rollover_date');
+      
+      if (lastSummaryDate !== todayStr) {
+        setIsDailySummaryOpen(true);
+      } else if (lastRolloverDate !== todayStr) {
+        // Summary was shown but rollover wasn't done
+        checkAndShowRollover(todayStr);
+      }
+    }
+  }, [isAppInitializing, isAuthenticated]);
+
+  const checkAndShowRollover = (todayStr: string) => {
+    const pastIncompleteTasks = tasks.filter(t => !t.completed && t.dueDate < todayStr);
+    const pastCompletedTasks = tasks.filter(t => t.completed && t.dueDate < todayStr);
+    
+    const importantPastTasks = pastIncompleteTasks.filter(t => t.priority === 'Urgent' || t.priority === 'High' || t.pinned);
+    const disposablePastTasks = pastIncompleteTasks.filter(t => !(t.priority === 'Urgent' || t.priority === 'High' || t.pinned));
+    
+    if (importantPastTasks.length > 0) {
+      setRolloverTasks(importantPastTasks);
+      setIsDailyRolloverOpen(true);
+    } else {
+      // Nothing important, clean up all past tasks
+      if (pastCompletedTasks.length > 0 || disposablePastTasks.length > 0) {
+        const pastIds = new Set([...pastCompletedTasks, ...disposablePastTasks].map(t => t.id));
+        setTasks(prev => prev.filter(t => !pastIds.has(t.id)));
+      }
+      localStorage.setItem('goalsmi_last_rollover_date', todayStr);
+    }
+  };
+
+  const handleRolloverConfirm = (tasksToKeepIds: string[]) => {
+    const todayStr = formatDate(new Date());
+    setTasks(prev => {
+      const pastTasks = prev.filter(t => t.dueDate < todayStr);
+      const pastIds = new Set(pastTasks.map(t => t.id));
+      const keepIdsSet = new Set(tasksToKeepIds);
+      
+      return prev.map(t => {
+        if (keepIdsSet.has(t.id)) {
+          return { ...t, dueDate: todayStr };
+        }
+        return t;
+      }).filter(t => !pastIds.has(t.id) || keepIdsSet.has(t.id));
+    });
+    
+    localStorage.setItem('goalsmi_last_rollover_date', todayStr);
+    setIsDailyRolloverOpen(false);
+  };
 
   // Synchronize dark mode class
   useEffect(() => {
@@ -1057,6 +1107,7 @@ export default function App() {
 
   // Smart suggestions ticker list
   const activeSuggestions = getSmartSuggestions(tasks, habits);
+  const recommendedTask = getRecommendedTask(tasks);
 
   const handleAddNote = () => {
     if (!quickNoteText.trim()) return;
@@ -1202,8 +1253,30 @@ export default function App() {
       </div>
 
       {/* Smart Suggestions Console */}
-      {activeSuggestions.length > 0 && (
-        <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/40 rounded-2xl p-4 flex items-start gap-3">
+      {recommendedTask ? (
+        <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-200/50 dark:border-amber-900/40 rounded-3xl p-4 space-y-3 shadow-sm">
+          <div className="flex items-center gap-2 px-1">
+            <Sparkles className="w-5 h-5 text-amber-500 shrink-0 animate-pulse" />
+            <h2 className="text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+              Smart Suggestion
+            </h2>
+          </div>
+          <p className="text-xs text-amber-700/80 dark:text-amber-400/80 font-medium px-1 pb-1">
+            Based on upcoming due dates, priority, and remaining focus time, we recommend tackling this next:
+          </p>
+          <TaskCard 
+            task={recommendedTask}
+            onToggleComplete={handleToggleTask}
+            onTogglePin={handleTogglePin}
+            onDelete={handleDeleteTask}
+            onEdit={handleEditTask}
+            onToggleSubtask={handleToggleSubtask}
+            categories={categories}
+            activeFocusTaskId={activeFocusTaskId}
+          />
+        </div>
+      ) : activeSuggestions.length > 0 && (
+        <div className="bg-amber-50/50 dark:bg-amber-950/10 border border-amber-100 dark:border-amber-900/40 rounded-3xl p-4 flex items-start gap-3">
           <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
           <div>
             <span className="text-[10px] uppercase font-bold tracking-wider text-amber-600 dark:text-amber-500">
@@ -2363,10 +2436,20 @@ export default function App() {
 
       {/* Main Tab Routing */}
       <main className="max-w-xl mx-auto bg-slate-50/50 dark:bg-slate-950/50 min-h-screen relative shadow-sm pb-48">
-        {activeTab === 'home' && renderHome()}
-        {activeTab === 'tasks' && renderTasks()}
-        {activeTab === 'habits' && renderHabits()}
-        {activeTab === 'profile' && renderProfile()}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeTab}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+          >
+            {activeTab === 'home' && renderHome()}
+            {activeTab === 'tasks' && renderTasks()}
+            {activeTab === 'habits' && renderHabits()}
+            {activeTab === 'profile' && renderProfile()}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       {/* Floating Create Button */}
@@ -2801,10 +2884,25 @@ export default function App() {
         initialStage={modalInitialStage}
       />
 
+      {/* Daily Rollover Modal */}
+      <DailyRolloverModal
+        isOpen={isDailyRolloverOpen}
+        onClose={() => handleRolloverConfirm([])}
+        tasks={rolloverTasks}
+        onConfirm={handleRolloverConfirm}
+      />
+
       {/* Daily Summary Modal */}
       <DailySummaryModal 
         isOpen={isDailySummaryOpen}
-        onClose={() => setIsDailySummaryOpen(false)}
+        onClose={() => {
+          setIsDailySummaryOpen(false);
+          const todayStr = formatDate(new Date());
+          const lastRolloverDate = localStorage.getItem('goalsmi_last_rollover_date');
+          if (lastRolloverDate !== todayStr) {
+            checkAndShowRollover(todayStr);
+          }
+        }}
         tasks={tasks}
         habits={habits}
       />

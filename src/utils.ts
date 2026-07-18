@@ -375,3 +375,41 @@ export function getSmartSuggestions(tasks: Task[], habits: Habit[]): SmartSugges
 
   return suggestions;
 }
+
+// Recommend a task based on priority, due date, and duration
+export function getRecommendedTask(tasks: Task[]): Task | null {
+  const todayStr = formatDate(new Date());
+  
+  const pendingTasks = tasks.filter(t => !t.completed);
+  if (pendingTasks.length === 0) return null;
+
+  return pendingTasks.sort((a, b) => {
+    let scoreA = 0;
+    let scoreB = 0;
+
+    // Priority scoring
+    const priorityScore = { Urgent: 40, High: 30, Medium: 10, Low: 0 };
+    scoreA += priorityScore[a.priority] || 0;
+    scoreB += priorityScore[b.priority] || 0;
+
+    // Due date scoring
+    if (a.dueDate < todayStr) scoreA += 50; // overdue
+    else if (a.dueDate === todayStr) scoreA += 30; // today
+    else if (a.dueDate > todayStr) scoreA -= 10; // future
+
+    if (b.dueDate < todayStr) scoreB += 50;
+    else if (b.dueDate === todayStr) scoreB += 30;
+    else if (b.dueDate > todayStr) scoreB -= 10;
+
+    // Pinned
+    if (a.pinned) scoreA += 20;
+    if (b.pinned) scoreB += 20;
+
+    // Tie-breaker based on duration (shorter tasks slightly preferred if tied)
+    if (scoreA === scoreB) {
+      return (a.duration || 0) - (b.duration || 0);
+    }
+
+    return scoreB - scoreA; // descending
+  })[0];
+}

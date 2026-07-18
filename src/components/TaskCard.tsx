@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, useMotionValue, useTransform } from 'motion/react';
 import { 
   Check, Clock, Flag, Pin, Trash2, Edit2, 
   ChevronDown, ChevronUp, ListTodo, Paperclip, AlertCircle,
@@ -98,6 +98,28 @@ export default function TaskCard({
 
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState(task.name);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const x = useMotionValue(0);
+  
+  // Transform values based on drag position
+  const deleteIconOpacity = useTransform(x, [-80, -30, 0], [1, 0.5, 0]);
+  const deleteIconScale = useTransform(x, [-80, -30, 0], [1.1, 0.8, 0.5]);
+  const deleteBgOpacity = useTransform(x, [-30, 0], [1, 0]);
+
+  const handleDragEnd = (e: any, info: any) => {
+    const threshold = -100;
+    const velocity = info.velocity.x;
+
+    // If dragged past threshold or swiped fast enough left
+    if (info.offset.x < threshold || velocity < -500) {
+      if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+        navigator.vibrate(60);
+      }
+      setIsDeleting(true);
+      setTimeout(() => onDelete(task.id), 200);
+    }
+  };
 
   useEffect(() => {
     setEditedName(task.name);
@@ -171,33 +193,34 @@ export default function TaskCard({
   return (
     <div className="relative overflow-hidden rounded-[24px]">
       {/* Swipe background indicator - visible when swiped left */}
-      <div className="absolute inset-0 bg-gradient-to-l from-rose-500 to-red-600 flex items-center justify-end pr-6 text-white rounded-[24px] pointer-events-none z-0">
-        <div className="flex flex-col items-center justify-center gap-1">
-          <Trash2 className="w-5 h-5 animate-pulse" />
+      <motion.div 
+        style={{ opacity: deleteBgOpacity }}
+        className="absolute inset-0 bg-gradient-to-l from-rose-500 to-red-600 flex items-center justify-end pr-6 text-white rounded-[24px] pointer-events-none z-0"
+      >
+        <motion.div 
+          style={{ opacity: deleteIconOpacity, scale: deleteIconScale }}
+          className="flex flex-col items-center justify-center gap-1"
+        >
+          <Trash2 className="w-5 h-5" />
           <span className="text-[10px] font-black uppercase tracking-widest">Delete</span>
-        </div>
-      </div>
+        </motion.div>
+      </motion.div>
 
       <motion.div
         layout
-        drag="x"
+        drag={isDeleting ? false : "x"}
         dragDirectionLock
         dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0.6, right: 0.05 }}
-        onDragEnd={(e, info) => {
-          if (info.offset.x < -100) {
-            if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
-              navigator.vibrate(60);
-            }
-            onDelete(task.id);
-          }
-        }}
+        dragElastic={{ left: 0.8, right: 0.05 }}
+        style={{ x, touchAction: "pan-y" }}
+        animate={isDeleting ? { x: -window.innerWidth, opacity: 0 } : { opacity: 1, y: 0 }}
+        onDragEnd={handleDragEnd}
         initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
+        whileTap={{ cursor: "grabbing" }}
         exit={task.completed ? { opacity: 0, x: 140, scale: 0.95 } : { opacity: 0, x: -100, scale: 0.95 }}
         transition={{ type: 'spring', stiffness: 240, damping: 25 }}
         id={`task-card-${task.id}`}
-        className={`group relative minimal-card border-l-4 transition-all overflow-hidden z-10 cursor-grab active:cursor-grabbing ${
+        className={`group relative minimal-card border-l-4 transition-all overflow-hidden z-10 cursor-grab ${
           task.completed 
             ? 'bg-slate-50/50 shadow-none border-green-500 opacity-80 dark:bg-slate-800/30' 
             : timerMode !== 'idle'
@@ -256,7 +279,7 @@ export default function TaskCard({
             </div>
 
             {/* Middle block: Title, Category Badge, and Date Badge on a clean responsive layout */}
-            <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-4" onClick={() => !isEditingName && setIsExpanded(!isExpanded)}>
+            <div className="flex-1 min-w-0 flex flex-col md:flex-row md:items-center justify-between gap-1.5 md:gap-4" onClick={() => !isEditingName && setIsExpanded(!isExpanded)}>
               <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 min-w-0 w-full" onClick={(e) => e.stopPropagation()}>
                   {isEditingName ? (
@@ -365,7 +388,7 @@ export default function TaskCard({
               </div>
 
               {/* Badges container: Clock and Priority */}
-              <div className="flex items-center gap-1.5 shrink-0 self-start sm:self-auto mt-0.5 sm:mt-0">
+              <div className="flex items-center gap-1.5 shrink-0 self-start md:self-auto mt-0.5 md:mt-0">
                 <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full border flex items-center gap-1 ${
                   isOverdue 
                     ? 'bg-rose-50 border-rose-100 text-rose-600 dark:bg-rose-950/20 dark:border-rose-900/30 dark:text-rose-400'
@@ -376,15 +399,15 @@ export default function TaskCard({
                 </span>
 
                 {task.priority !== 'Low' && (
-                  <span className={`px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider ${priorityColors[task.priority]}`}>
+                  <span className={`px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider hidden md:inline-flex ${priorityColors[task.priority]}`}>
                     {task.priority}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Desktop Action Buttons: Hidden on mobile, visible on hover on desktop */}
-            <div className="hidden sm:flex items-center justify-end gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+            {/* Desktop Action Buttons: Hidden on tablet/mobile, visible on hover on desktop */}
+            <div className="hidden md:flex items-center justify-end gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
                 onClick={(e) => { e.stopPropagation(); toggleTimer(); setIsExpanded(true); }}
                 title="Focus Timer"
@@ -426,8 +449,8 @@ export default function TaskCard({
             </div>
           </div>
           
-          {/* Mobile Action Bar: Only visible on mobile, beautifully placed down below */}
-          <div className="flex sm:hidden items-center justify-between px-4 pb-3 pt-1 border-t border-transparent group-hover:border-slate-50 dark:group-hover:border-slate-800/50">
+          {/* Mobile Action Bar: Only visible on smaller screens, beautifully placed down below */}
+          <div className="flex md:hidden items-center justify-between px-4 pb-3 pt-1 border-t border-transparent group-hover:border-slate-50 dark:group-hover:border-slate-800/50">
             <div className="flex items-center gap-2">
               {task.priority !== 'Low' && (
                 <span className={`px-1.5 py-0.5 text-[9px] font-extrabold uppercase rounded-md tracking-wider ${priorityColors[task.priority]}`}>
